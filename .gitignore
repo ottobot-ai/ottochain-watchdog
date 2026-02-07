@@ -1,0 +1,19 @@
+# Environment files (contain secrets)
+.env
+*.env.local
+
+# Generated configs
+prometheus/prometheus.yml
+
+# Data volumes (if mounted locally)
+data/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

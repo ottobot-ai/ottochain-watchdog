@@ -188,11 +188,11 @@ export class MetagraphMonitor {
 
     await executeRestartPlan(
       {
-        group:    event.suggestedAction,
-        layer:    event.layer,
-        nodeIds:  affectedNodeIds,
-        reason:   event.description,
-        seedNode: seedNode?.nodeId,
+        scope:        event.suggestedAction!,
+        layer:        event.layer,
+        targetNodeId: affectedNodeIds[0],
+        seedNodeId:   seedNode?.nodeId,
+        reason:       event.description,
       },
       this.config.nodes,
       this.config

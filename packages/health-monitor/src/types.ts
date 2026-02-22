@@ -6,15 +6,15 @@
 
 export type LayerName = 'GL0' | 'ML0' | 'CL1' | 'DL1';
 
-export interface NodeInfo {
-  nodeId: string;   // 1 | 2 | 3
-  host:   string;  // IP address
-  layers: LayerConfig[];
-}
-
 export interface LayerConfig {
   name:  LayerName;
   port:  number;
+}
+
+export interface NodeInfo {
+  nodeId: string;    // "1" | "2" | "3"
+  host:   string;   // IP address
+  layers: LayerConfig[];
 }
 
 // ── Cluster state ─────────────────────────────────────────────────────────────
@@ -26,15 +26,13 @@ export interface ClusterPeer {
 }
 
 export interface NodeClusterView {
-  nodeId:  string;
-  layer:   LayerName;
-  host:    string;
-  port:    number;
-  peers:   ClusterPeer[];
-  /** ISO timestamp of when this was polled */
+  nodeId:   string;
+  layer:    LayerName;
+  host:     string;
+  port:     number;
+  peers:    ClusterPeer[];
   polledAt: string;
-  /** True if the HTTP request failed */
-  error?: string;
+  error?:   string;
 }
 
 export interface ClusterSnapshot {
@@ -58,24 +56,22 @@ export interface HealthEvent {
   nodeIds:     string[];
   description: string;
   timestamp:   string;
-  /** Auto-populated by the monitor with suggested action */
-  suggestedAction?: RestartGroup;
+  suggestedAction?: RestartScope;
 }
 
 // ── Restart orchestration ─────────────────────────────────────────────────────
 
-export type RestartGroup =
+export type RestartScope =
   | 'IndividualNode'
   | 'FullLayer'
   | 'FullMetagraph';
 
 export interface RestartPlan {
-  group:     RestartGroup;
-  layer:     LayerName;
-  nodeIds:   string[];
-  reason:    string;
-  /** Reference node to use as seed during rejoin */
-  seedNode?: string;
+  scope:         RestartScope;
+  layer?:        LayerName;
+  targetNodeId?: string;
+  seedNodeId?:   string;
+  reason:        string;
 }
 
 // ── Snapshot / ordinal tracking ───────────────────────────────────────────────
@@ -85,4 +81,11 @@ export interface OrdinalSnapshot {
   layer:     LayerName;
   ordinal:   number;
   timestamp: string;
+}
+
+// ── GL0 fork detection ────────────────────────────────────────────────────────
+
+export interface GL0NodeState {
+  nodeId:  string;
+  ordinal: number;
 }

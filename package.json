@@ -1,22 +1,18 @@
 {
-  "name": "ottochain-health-monitor",
+  "name": "ottochain-monitoring",
   "version": "0.1.0",
-  "description": "Centralized metagraph health monitoring with fork detection and automated restart",
-  "type": "module",
-  "main": "dist/index.js",
+  "private": true,
+  "description": "OttoChain monitoring infrastructure",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
-    "check": "node dist/index.js --once"
-  },
-  "dependencies": {
-    "ssh2": "^1.16.0"
+    "build": "npm run build --workspace=@ottochain/health-monitor",
+    "start": "npm run start --workspace=@ottochain/health-monitor",
+    "dev": "npm run dev --workspace=@ottochain/health-monitor",
+    "test": "npm run test --workspace=@ottochain/health-monitor"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "@types/ssh2": "^1.15.0",
-    "tsx": "^4.0.0",
     "typescript": "^5.7.0"
   }
 }

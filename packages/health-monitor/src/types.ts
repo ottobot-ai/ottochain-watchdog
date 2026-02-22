@@ -3,6 +3,10 @@
  */
 
 // ── Layer identifiers ─────────────────────────────────────────────────────────
+// GL0: Global L0      — Tessellation dag-l0.jar
+// ML0: Metagraph L0   — OttoChain metagraph-l0.jar (built from tessellation currency-l0)
+// CL1: Currency L1    — OttoChain currency-l1.jar (built from tessellation currency-l1)
+// DL1: Data L1        — OttoChain data-l1.jar (built from tessellation currency-l1)
 
 export type LayerName = 'GL0' | 'ML0' | 'CL1' | 'DL1';
 

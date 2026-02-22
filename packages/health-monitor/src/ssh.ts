@@ -21,7 +21,7 @@ async function getSsh2() {
 
 const LAYER_CONTAINER: Record<LayerName, string> = {
   GL0: 'gl0',
-  ML0: 'metagraph-node',  // adjust to actual container name
+  ML0: 'ml0',  // OttoChain metagraph-l0 (built from tessellation currency-l0)
   CL1: 'cl1',
   DL1: 'dl1',
 };

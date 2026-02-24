@@ -17,11 +17,11 @@ export interface NodeInfo {
 /** Cluster member from /cluster/info */
 export interface ClusterMember {
   id: string;
-  ip: string;
-  publicPort: number;
-  p2pPort: number;
-  session: string;
   state: string;
+  ip?: string;
+  publicPort?: number;
+  p2pPort?: number;
+  session?: string;
 }
 
 /** Result of a health check on a single node+layer */

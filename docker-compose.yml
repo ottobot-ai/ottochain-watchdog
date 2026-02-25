@@ -1,6 +1,37 @@
 version: '3.8'
 
 services:
+  # ============================================
+  # Health Monitor - Fork detection & auto-restart
+  # ============================================
+  health-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/ottobot-ai/ottochain-health-monitor:${VERSION:-latest}
+    container_name: health-monitor
+    restart: unless-stopped
+    environment:
+      - NODE_IPS=${NODE_IPS:-5.78.90.207,5.78.113.25,5.78.107.77}
+      - NODE_NAMES=${NODE_NAMES:-node1,node2,node3}
+      - SSH_KEY_PATH=/home/monitor/.ssh/id_rsa
+      - SSH_USER=${SSH_USER:-root}
+      - SNAPSHOT_STALL_MINUTES=${SNAPSHOT_STALL_MINUTES:-4}
+      - HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-60}
+      - RESTART_COOLDOWN_MINUTES=${RESTART_COOLDOWN_MINUTES:-10}
+      - MAX_RESTARTS_PER_HOUR=${MAX_RESTARTS_PER_HOUR:-6}
+      - WEBHOOK_URL=${WEBHOOK_URL:-}
+    volumes:
+      - ${SSH_KEY_PATH:-~/.ssh/hetzner_ottobot}:/home/monitor/.ssh/id_rsa:ro
+    networks:
+      - monitoring
+    # Expose metrics port for Prometheus scraping (if enabled)
+    ports:
+      - "3032:3032"
+
+  # ============================================
+  # Prometheus - Metrics & alerting engine
+  # ============================================
   prometheus:
     image: prom/prometheus:v2.50.0
     container_name: prometheus
@@ -23,6 +54,9 @@ services:
     networks:
       - monitoring
 
+  # ============================================
+  # Alertmanager - Alert routing & notifications
+  # ============================================
   alertmanager:
     image: prom/alertmanager:v0.27.0
     container_name: alertmanager
@@ -40,6 +74,9 @@ services:
     networks:
       - monitoring
 
+  # ============================================
+  # Grafana - Dashboards & visualization
+  # ============================================
   grafana:
     image: grafana/grafana:10.3.1
     container_name: grafana
@@ -47,10 +84,17 @@ services:
     ports:
       - "3000:3000"
     environment:
+      # Admin credentials
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
+      # Anonymous access for status.ottochain.ai (read-only)
+      - GF_AUTH_ANONYMOUS_ENABLED=${GRAFANA_ANONYMOUS_ENABLED:-true}
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_AUTH_ANONYMOUS_ORG_NAME=Main Org.
+      # Server config
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+      # Alerting
       - GF_ALERTING_ENABLED=true
       - GF_UNIFIED_ALERTING_ENABLED=true
     volumes:
@@ -61,7 +105,9 @@ services:
     networks:
       - monitoring
 
-  # Optional: Log aggregation
+  # ============================================
+  # Loki - Log aggregation (optional)
+  # ============================================
   loki:
     image: grafana/loki:2.9.4
     container_name: loki

@@ -1,0 +1,36 @@
+# Dependencies
+node_modules
+packages/*/node_modules
+
+# Build outputs (rebuilt in container)
+dist
+
+# Development files
+.git
+.github
+*.md
+!README.md
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode
+.idea
+
+# Test files
+**/*.test.ts
+**/*.spec.ts
+coverage
+.vitest
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+
+# Prometheus/Grafana/Loki configs (deployed separately)
+prometheus
+alertmanager
+grafana
+loki
+scripts

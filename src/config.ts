@@ -51,6 +51,10 @@ export interface Config {
   /** Notification webhook (Discord/Telegram) */
   webhookUrl?: string;
 
+  /** Monitor service URL (for publishing events to status page) */
+  monitorUrl?: string;
+  monitorApiKey?: string;
+
   /** Run mode */
   daemon: boolean;
   once: boolean;
@@ -96,6 +100,9 @@ export function loadConfig(): Config {
     maxRestartsPerHour: int(process.env.MAX_RESTARTS_PER_HOUR, 6),
 
     webhookUrl: process.env.WEBHOOK_URL,
+    monitorUrl: process.env.MONITOR_URL,  // e.g., http://localhost:3032
+    monitorApiKey: process.env.MONITOR_API_KEY,
+
     daemon: process.argv.includes('--daemon'),
     once: process.argv.includes('--once'),
   };

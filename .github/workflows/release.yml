@@ -63,10 +63,13 @@ jobs:
           generate_release_notes: true
 
       - name: Notify deploy repo
-        if: secrets.DEPLOY_REPO_TOKEN != ''
         env:
           GH_TOKEN: ${{ secrets.DEPLOY_REPO_TOKEN }}
         run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "⚠️ DEPLOY_REPO_TOKEN not set, skipping deploy notification"
+            exit 0
+          fi
           gh api repos/ottobot-ai/ottochain-deploy/dispatches \
             -f event_type=version-bump \
             -f 'client_payload={"component":"monitoring","version":"${{ steps.version.outputs.version }}"}'

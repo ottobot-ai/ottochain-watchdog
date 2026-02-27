@@ -1,0 +1,886 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "OttoChain metagraph operational dashboard — ordinals, JVM, gossip, HTTP, infrastructure",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Overview",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "options": { "0": { "color": "red", "text": "Down" }, "0.5": { "color": "orange", "text": "Degraded" }, "1": { "color": "green", "text": "Operational" } }, "type": "value" }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 0.5 }, { "color": "green", "value": 1 }] },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 1,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "min(ottochain_node_status)",
+          "legendFormat": "Status",
+          "refId": "A"
+        }
+      ],
+      "title": "Overall Status",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "max(dag_global_snapshot_ordinal{job=\"gl0\"})",
+          "legendFormat": "GL0 Ordinal",
+          "refId": "A"
+        }
+      ],
+      "title": "Hypergraph Ordinal",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 3,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "max(dag_global_snapshot_ordinal{job=\"ml0\"})",
+          "legendFormat": "ML0 Ordinal",
+          "refId": "A"
+        }
+      ],
+      "title": "Metagraph Ordinal",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }, "color": { "mode": "thresholds" } }
+      },
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 1 },
+      "id": 4,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "min(process_uptime_seconds{job=~\"gl0|ml0|cl1|dl1\"})",
+          "legendFormat": "Shortest uptime",
+          "refId": "A"
+        }
+      ],
+      "title": "Node Uptime (min)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }, "color": { "mode": "thresholds" } }
+      },
+      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 1 },
+      "id": 5,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "ottochain_metagraph_fiber_count",
+          "legendFormat": "Fibers",
+          "refId": "A"
+        }
+      ],
+      "title": "Active Fibers",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 5 }] },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "gridPos": { "h": 4, "w": 3, "x": 18, "y": 1 },
+      "id": 6,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "ottochain_active_alerts",
+          "legendFormat": "Alerts",
+          "refId": "A"
+        }
+      ],
+      "title": "Active Alerts",
+      "type": "stat"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "title": "Ordinal Progression",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 10,
+      "options": { "legend": { "calcs": ["lastNotNull", "min", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "dag_global_snapshot_ordinal{job=\"gl0\",instance=~\"$node\"}",
+          "legendFormat": "GL0 {{instance}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "dag_global_snapshot_ordinal{job=\"ml0\",instance=~\"$node\"}",
+          "legendFormat": "ML0 {{instance}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Ordinal Over Time (GL0 + ML0)",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 6 },
+      "id": 11,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(dag_global_snapshot_ordinal{job=\"gl0\",instance=~\"$node\"}[5m])",
+          "legendFormat": "GL0 ordinal rate",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(dag_global_snapshot_ordinal{job=\"ml0\",instance=~\"$node\"}[5m])",
+          "legendFormat": "ML0 ordinal rate",
+          "refId": "B"
+        }
+      ],
+      "title": "Ordinal Rate (snapshots/s)",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 6 },
+      "id": 12,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "max(dag_global_snapshot_ordinal{job=\"gl0\"}) - max(dag_global_snapshot_ordinal{job=\"ml0\"})",
+          "legendFormat": "GL0 - ML0 ordinal lag",
+          "refId": "A"
+        }
+      ],
+      "title": "Metagraph ↔ Hypergraph Ordinal Lag",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 10 },
+      "id": 13,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(dag_global_snapshot_state_channel_snapshots_total{job=\"gl0\",instance=~\"$node\"}[5m])",
+          "legendFormat": "state channel snapshot rate",
+          "refId": "A"
+        }
+      ],
+      "title": "State Channel Snapshots in Hypergraph (rate)",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 102,
+      "title": "Consensus & Gossip Health",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 15 },
+      "id": 20,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "dag_consensus_duration_seconds{job=\"gl0\",quantile=\"0.95\",instance=~\"$node\"}",
+          "legendFormat": "GL0 p95",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "dag_consensus_duration_seconds{job=\"ml0\",quantile=\"0.95\",instance=~\"$node\"}",
+          "legendFormat": "ML0 p95",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "dag_consensus_duration_seconds{job=\"gl0\",quantile=\"0.5\",instance=~\"$node\"}",
+          "legendFormat": "GL0 p50",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "dag_consensus_duration_seconds{job=\"ml0\",quantile=\"0.5\",instance=~\"$node\"}",
+          "legendFormat": "ML0 p50",
+          "refId": "D"
+        }
+      ],
+      "title": "Consensus Duration (p50/p95)",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 15 },
+      "id": 21,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "dag_gossip_round_duration_seconds{job=~\"$layer\",quantile=\"0.95\",instance=~\"$node\"}",
+          "legendFormat": "{{job}} {{instance}} p95",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "dag_gossip_round_duration_seconds{job=~\"$layer\",quantile=\"0.5\",instance=~\"$node\"}",
+          "legendFormat": "{{job}} {{instance}} p50",
+          "refId": "B"
+        }
+      ],
+      "title": "Gossip Round Duration",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 15 },
+      "id": 22,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(dag_gossip_round_succeeded{job=~\"$layer\",instance=~\"$node\"}[5m])",
+          "legendFormat": "{{job}} {{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Gossip Success Rate",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "ops", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 22 },
+      "id": 23,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(dag_rumors_spread{job=~\"$layer\",instance=~\"$node\"}[5m])",
+          "legendFormat": "spread {{job}} {{instance}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(dag_rumors_consumed{job=~\"$layer\",instance=~\"$node\"}[5m])",
+          "legendFormat": "consumed {{job}} {{instance}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Rumors Spread vs Consumed",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
+      "id": 103,
+      "title": "JVM & Resource Health",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.8 }, { "color": "red", "value": 0.9 }] },
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 30 },
+      "id": 30,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "jvm_memory_used_bytes{area=\"heap\",job=~\"$layer\",instance=~\"$node\"} / jvm_memory_max_bytes{area=\"heap\",job=~\"$layer\",instance=~\"$node\"}",
+          "legendFormat": "{{job}} {{instance}} heap",
+          "refId": "A"
+        }
+      ],
+      "title": "Heap Memory Usage %",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "percentunit",
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.15 }, { "color": "red", "value": 0.30 }] },
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 30 },
+      "id": 31,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "jvm_gc_overhead{job=~\"$layer\",instance=~\"$node\"}",
+          "legendFormat": "{{job}} {{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "GC Overhead % (>15% warning, >30% critical)",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 30 },
+      "id": 32,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "jvm_gc_pause_seconds{job=~\"$layer\",quantile=\"0.95\",instance=~\"$node\"}",
+          "legendFormat": "{{job}} {{instance}} p95",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "jvm_gc_pause_seconds{job=~\"$layer\",quantile=\"0.5\",instance=~\"$node\"}",
+          "legendFormat": "{{job}} {{instance}} p50",
+          "refId": "B"
+        }
+      ],
+      "title": "GC Pause Duration",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "percentunit", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 37 },
+      "id": 33,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "process_cpu_usage{job=~\"$layer\",instance=~\"$node\"}",
+          "legendFormat": "{{job}} {{instance}} process",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "system_cpu_usage{job=~\"$layer\",instance=~\"$node\"}",
+          "legendFormat": "{{job}} {{instance}} system",
+          "refId": "B"
+        }
+      ],
+      "title": "CPU Usage",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 37 },
+      "id": 34,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "jvm_threads_live_threads{job=~\"$layer\",instance=~\"$node\"}",
+          "legendFormat": "{{job}} {{instance}} live",
+          "refId": "A"
+        }
+      ],
+      "title": "Thread Count",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "percentunit", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 37 },
+      "id": 35,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "process_files_open_files{job=~\"$layer\",instance=~\"$node\"} / process_files_max_files{job=~\"$layer\",instance=~\"$node\"}",
+          "legendFormat": "{{job}} {{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Open File Descriptors %",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 44 },
+      "id": 104,
+      "title": "HTTP / API Performance",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 45 },
+      "id": 40,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(dag_http_request_count{job=~\"$layer\",instance=~\"$node\"}[5m])",
+          "legendFormat": "in {{job}} {{instance}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(dag_http_client_request_count{job=~\"$layer\",instance=~\"$node\"}[5m])",
+          "legendFormat": "out {{job}} {{instance}}",
+          "refId": "B"
+        }
+      ],
+      "title": "HTTP Request Rate (in/out)",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 45 },
+      "id": 41,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.50, rate(dag_http_request_time_duration_seconds_bucket{job=~\"$layer\",instance=~\"$node\"}[5m]))",
+          "legendFormat": "in p50 {{job}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, rate(dag_http_request_time_duration_seconds_bucket{job=~\"$layer\",instance=~\"$node\"}[5m]))",
+          "legendFormat": "in p95 {{job}}",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.99, rate(dag_http_request_time_duration_seconds_bucket{job=~\"$layer\",instance=~\"$node\"}[5m]))",
+          "legendFormat": "in p99 {{job}}",
+          "refId": "C"
+        }
+      ],
+      "title": "HTTP Incoming Latency p50/p95/p99",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 45 },
+      "id": 42,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(logback_events_total{level=\"ERROR\",job=~\"$layer\",instance=~\"$node\"}[5m])",
+          "legendFormat": "ERROR {{job}} {{instance}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(logback_events_total{level=\"WARN\",job=~\"$layer\",instance=~\"$node\"}[5m])",
+          "legendFormat": "WARN {{job}} {{instance}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Error & Warn Log Rate",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 52 },
+      "id": 105,
+      "title": "Infrastructure",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.75 }, { "color": "red", "value": 0.90 }] },
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "never" }
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 53 },
+      "id": 50,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "1 - (disk_free_bytes{job=~\"$layer\",instance=~\"$node\"} / disk_total_bytes{job=~\"$layer\",instance=~\"$node\"})",
+          "legendFormat": "{{job}} {{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Disk Usage %",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 53 },
+      "id": 51,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "system_load_average_1m{job=~\"$layer\",instance=~\"$node\"}",
+          "legendFormat": "{{job}} {{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "System Load Average (1m)",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 53 },
+      "id": 52,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "changes(process_start_time_seconds{job=~\"$layer\",instance=~\"$node\"}[1h])",
+          "legendFormat": "restarts {{job}} {{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Node Restarts (last 1h)",
+      "type": "timeseries"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 60 },
+      "id": 106,
+      "title": "Monitor Health (meta-monitoring)",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 30 }, { "color": "red", "value": 60 }] },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 61 },
+      "id": 60,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "time() - ottochain_monitor_last_check_timestamp",
+          "legendFormat": "seconds since last check",
+          "refId": "A"
+        }
+      ],
+      "title": "Monitor Staleness",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5, "showPoints": "never" } }
+      },
+      "gridPos": { "h": 7, "w": 10, "x": 4, "y": 61 },
+      "id": 61,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, rate(ottochain_monitor_check_duration_seconds_bucket[5m]))",
+          "legendFormat": "check duration p95",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.50, rate(ottochain_monitor_check_duration_seconds_bucket[5m]))",
+          "legendFormat": "check duration p50",
+          "refId": "B"
+        }
+      ],
+      "title": "Health Check Duration",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "options": { "0": { "color": "red", "text": "Down" }, "1": { "color": "green", "text": "Up" } }, "type": "value" }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] },
+          "color": { "mode": "thresholds" },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 7, "w": 10, "x": 14, "y": 61 },
+      "id": 62,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value_and_name" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "ottochain_node_status",
+          "legendFormat": "{{layer}} {{node}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Node Reachability",
+      "type": "stat"
+    },
+
+    {
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 68 },
+      "id": 107,
+      "title": "Alerts & Events",
+      "type": "row",
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "short" },
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "displayName", "value": "Restarts" }] }
+            ]
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 69 },
+          "id": 70,
+          "options": {
+            "frameIndex": 0,
+            "showHeader": true,
+            "sortBy": [{ "desc": true, "displayName": "Value" }]
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "ottochain_restarts_total",
+              "legendFormat": "{{scope}} / {{condition}}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "title": "Restart History (counter)",
+          "type": "table"
+        },
+
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "short" }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 69 },
+          "id": 71,
+          "options": {
+            "frameIndex": 0,
+            "showHeader": true
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "ottochain_node_status == 0",
+              "legendFormat": "{{layer}} {{node}}",
+              "refId": "A",
+              "instant": true
+            }
+          ],
+          "title": "Currently Unhealthy Nodes",
+          "type": "table"
+        }
+      ]
+    }
+
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "tags": ["ottochain", "metagraph", "operations"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(dag_global_snapshot_ordinal, instance)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Node",
+        "multi": true,
+        "name": "node",
+        "options": [],
+        "query": {
+          "query": "label_values(dag_global_snapshot_ordinal, instance)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "hide": 0,
+        "includeAll": true,
+        "label": "Layer",
+        "multi": true,
+        "name": "layer",
+        "options": [
+          { "selected": false, "text": "gl0", "value": "gl0" },
+          { "selected": false, "text": "ml0", "value": "ml0" },
+          { "selected": false, "text": "cl1", "value": "cl1" },
+          { "selected": false, "text": "dl1", "value": "dl1" }
+        ],
+        "query": "gl0,ml0,cl1,dl1",
+        "type": "custom"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {
+    "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "off"],
+    "time_options": ["15m", "1h", "6h", "24h", "7d"]
+  },
+  "timezone": "browser",
+  "title": "OttoChain Operations",
+  "uid": "ottochain-operations",
+  "version": 1
+}

@@ -1,5 +1,5 @@
 /**
- * Health monitor configuration.
+ * Watchdog configuration.
  *
  * All values can be overridden via environment variables.
  */
@@ -48,12 +48,14 @@ export interface Config {
   restartCooldownMinutes: number;
   maxRestartsPerHour: number;
 
-  /** Notification webhook (Discord/Telegram) */
-  webhookUrl?: string;
+  /** Redis URL for reading cached health data from services monitor */
+  redisUrl: string;
 
-  /** Monitor service URL (for publishing events to status page) */
-  monitorUrl?: string;
-  monitorApiKey?: string;
+  /** Postgres URL for reading events and writing restart events */
+  postgresUrl: string;
+
+  /** Seconds before health data is considered stale (triggers direct fallback) */
+  healthDataStaleSeconds: number;
 
   /** Run mode */
   daemon: boolean;
@@ -99,9 +101,9 @@ export function loadConfig(): Config {
     restartCooldownMinutes: int(process.env.RESTART_COOLDOWN_MINUTES, 10),
     maxRestartsPerHour: int(process.env.MAX_RESTARTS_PER_HOUR, 6),
 
-    webhookUrl: process.env.WEBHOOK_URL,
-    monitorUrl: process.env.MONITOR_URL,  // e.g., http://localhost:3032
-    monitorApiKey: process.env.MONITOR_API_KEY,
+    redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
+    postgresUrl: process.env.DATABASE_URL ?? 'postgresql://ottochain:ottochain-local-dev@localhost:5432/ottochain',
+    healthDataStaleSeconds: int(process.env.HEALTH_DATA_STALE_SECONDS, 60),
 
     daemon: process.argv.includes('--daemon'),
     once: process.argv.includes('--once'),

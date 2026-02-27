@@ -2,16 +2,18 @@
  * Snapshot Stall Detection Tests
  *
  * Tests for ML0 snapshot stall detection logic.
- * Ported from PR #4 (packages/health-monitor/test/snapshot.test.ts)
+ * Tests both the pure function (snapshot-based) and legacy (direct HTTP) modes.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   StallTracker,
   detectSnapshotsStopped,
+  detectSnapshotsStoppedFromSnapshot,
   type OrdinalFetchFn,
 } from './snapshots-stopped.js';
 import type { Config } from '../config.js';
+import type { HealthSnapshot, LayerHealth } from '../types.js';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -32,8 +34,36 @@ function makeConfig(nodeCount: number = 3): Config {
     healthCheckIntervalSeconds: 60,
     restartCooldownMinutes: 10,
     maxRestartsPerHour: 6,
+    redisUrl: 'redis://localhost:6379',
+    postgresUrl: '',
+    healthDataStaleSeconds: 60,
     daemon: false,
     once: false,
+  };
+}
+
+function makeSnapshot(nodeData: Array<{
+  ip: string;
+  ml0Ordinal: number;
+  ml0Reachable?: boolean;
+}>): HealthSnapshot {
+  return {
+    timestamp: new Date(),
+    stale: false,
+    source: 'redis',
+    nodes: nodeData.map((n, i) => ({
+      ip: n.ip,
+      name: `node${i + 1}`,
+      layers: [
+        {
+          layer: 'ml0' as const,
+          state: 'Ready',
+          ordinal: n.ml0Ordinal,
+          reachable: n.ml0Reachable ?? true,
+          clusterSize: 3,
+        },
+      ],
+    })),
   };
 }
 
@@ -97,10 +127,122 @@ describe('StallTracker', () => {
 });
 
 // ---------------------------------------------------------------------------
-// detectSnapshotsStopped tests
+// detectSnapshotsStoppedFromSnapshot tests (pure function)
 // ---------------------------------------------------------------------------
 
-describe('detectSnapshotsStopped()', () => {
+describe('detectSnapshotsStoppedFromSnapshot()', () => {
+  it('returns detected=false when ordinal advances', () => {
+    const config = makeConfig();
+    const tracker = new StallTracker();
+
+    // First check: ordinal 100
+    const snapshot1 = makeSnapshot([
+      { ip: '10.0.0.1', ml0Ordinal: 100 },
+      { ip: '10.0.0.2', ml0Ordinal: 100 },
+      { ip: '10.0.0.3', ml0Ordinal: 100 },
+    ]);
+    const result1 = detectSnapshotsStoppedFromSnapshot(config, snapshot1, tracker);
+    expect(result1.detected).toBe(false);
+
+    // Second check: ordinal 101 (advanced)
+    const snapshot2 = makeSnapshot([
+      { ip: '10.0.0.1', ml0Ordinal: 101 },
+      { ip: '10.0.0.2', ml0Ordinal: 101 },
+      { ip: '10.0.0.3', ml0Ordinal: 101 },
+    ]);
+    const result2 = detectSnapshotsStoppedFromSnapshot(config, snapshot2, tracker);
+    expect(result2.detected).toBe(false);
+  });
+
+  it('returns detected=false when ordinal unchanged but under threshold', () => {
+    const config = makeConfig();
+    const tracker = new StallTracker();
+
+    // First check establishes baseline
+    const snapshot = makeSnapshot([
+      { ip: '10.0.0.1', ml0Ordinal: 100 },
+    ]);
+    detectSnapshotsStoppedFromSnapshot(config, snapshot, tracker);
+
+    // Immediate second check — unchanged but fresh
+    const result = detectSnapshotsStoppedFromSnapshot(config, snapshot, tracker);
+    expect(result.detected).toBe(false);
+  });
+
+  it('returns detected=true when stalled past threshold', () => {
+    const config = makeConfig();
+    config.snapshotStallMinutes = 0.001; // ~60ms threshold for test
+
+    // Create a tracker with old timestamp
+    const tracker = new StallTracker();
+    const oldTime = Date.now() - 5 * 60 * 1000; // 5 minutes ago
+    tracker.update('10.0.0.1', 'ml0', 100, oldTime);
+
+    const snapshot = makeSnapshot([
+      { ip: '10.0.0.1', ml0Ordinal: 100 }, // Same ordinal
+    ]);
+
+    const result = detectSnapshotsStoppedFromSnapshot(config, snapshot, tracker);
+    expect(result.detected).toBe(true);
+    expect(result.condition).toBe('SnapshotsStopped');
+    expect(result.restartScope).toBe('full-metagraph');
+  });
+
+  it('returns unreachable when all nodes fail', () => {
+    const config = makeConfig();
+    const tracker = new StallTracker();
+
+    const snapshot = makeSnapshot([
+      { ip: '10.0.0.1', ml0Ordinal: -1, ml0Reachable: false },
+      { ip: '10.0.0.2', ml0Ordinal: -1, ml0Reachable: false },
+      { ip: '10.0.0.3', ml0Ordinal: -1, ml0Reachable: false },
+    ]);
+
+    const result = detectSnapshotsStoppedFromSnapshot(config, snapshot, tracker);
+    expect(result.detected).toBe(false);
+    expect(result.details).toBe('ML0 unreachable');
+  });
+
+  it('uses first reachable node', () => {
+    const config = makeConfig(3);
+    const tracker = new StallTracker();
+
+    const snapshot = makeSnapshot([
+      { ip: '10.0.0.1', ml0Ordinal: -1, ml0Reachable: false },
+      { ip: '10.0.0.2', ml0Ordinal: -1, ml0Reachable: false },
+      { ip: '10.0.0.3', ml0Ordinal: 200, ml0Reachable: true },
+    ]);
+
+    const result = detectSnapshotsStoppedFromSnapshot(config, snapshot, tracker);
+    expect(result.detected).toBe(false);
+    expect(tracker.lastOrdinal('10.0.0.3', 'ml0')).toBe(200);
+  });
+
+  it('includes all nodes and layers on stall detection', () => {
+    const config = makeConfig(3);
+    config.snapshotStallMinutes = 0.001;
+
+    const tracker = new StallTracker();
+    tracker.update('10.0.0.1', 'ml0', 100, Date.now() - 10 * 60 * 1000);
+
+    const snapshot = makeSnapshot([
+      { ip: '10.0.0.1', ml0Ordinal: 100 },
+      { ip: '10.0.0.2', ml0Ordinal: 100 },
+      { ip: '10.0.0.3', ml0Ordinal: 100 },
+    ]);
+
+    const result = detectSnapshotsStoppedFromSnapshot(config, snapshot, tracker);
+    expect(result.detected).toBe(true);
+    expect(result.affectedNodes).toEqual(['10.0.0.1', '10.0.0.2', '10.0.0.3']);
+    expect(result.affectedLayers).toEqual(['ml0', 'cl1', 'dl1']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Legacy direct HTTP tests
+// ---------------------------------------------------------------------------
+
+describe('detectSnapshotsStopped() [legacy]', () => {
   it('returns detected=false when ordinal advances', async () => {
     const config = makeConfig();
     const tracker = new StallTracker();
@@ -204,20 +346,5 @@ describe('detectSnapshotsStopped()', () => {
     const mockFetch: OrdinalFetchFn = async () => 100;
     const result = await detectSnapshotsStopped(config, mockFetch, tracker);
     expect(result.detected).toBe(false);
-  });
-
-  it('includes all nodes and layers in affectedNodes/Layers on stall', async () => {
-    const config = makeConfig(3);
-    config.snapshotStallMinutes = 0.001;
-
-    const tracker = new StallTracker();
-    tracker.update('10.0.0.1', 'ml0', 100, Date.now() - 10 * 60 * 1000);
-
-    const mockFetch: OrdinalFetchFn = async () => 100;
-    const result = await detectSnapshotsStopped(config, mockFetch, tracker);
-
-    expect(result.detected).toBe(true);
-    expect(result.affectedNodes).toEqual(['10.0.0.1', '10.0.0.2', '10.0.0.3']);
-    expect(result.affectedLayers).toEqual(['ml0', 'cl1', 'dl1']);
   });
 });

@@ -7,13 +7,15 @@
  * - full-metagraph: kill everything, pick rollback node, restart ML0→L1s
  *
  * Tracks restart history to prevent restart loops.
+ *
+ * NOTE: Alerting is handled by Prometheus/Alertmanager. This module only
+ * performs restarts and logs events to Postgres.
  */
 
 import type { Config } from '../config.js';
 import type { DetectionResult, Layer, RestartEvent } from '../types.js';
 import { killLayerProcess, dockerControl, sshExec } from '../services/ssh.js';
 import { getNodeInfo } from '../services/node-api.js';
-import { notify } from '../services/notify.js';
 import { log } from '../logger.js';
 
 // In-memory restart history
@@ -242,7 +244,7 @@ export async function executeRestart(
   if (recentCount >= config.maxRestartsPerHour) {
     const msg = `Restart loop detected (${recentCount} restarts in 1h). Manual intervention required.`;
     log(`[Restart] ${msg}`);
-    await notify(config, `🚨 ${msg}`);
+    // NOTE: Alertmanager handles alerting via Prometheus metrics
     return false;
   }
 
@@ -256,7 +258,7 @@ export async function executeRestart(
     }
   }
 
-  await notify(config, `⚠️ ${result.condition}: ${result.details} — initiating ${result.restartScope} restart`);
+  log(`[Restart] Initiating ${result.restartScope} restart for ${result.condition}: ${result.details}`);
 
   const event: RestartEvent = {
     timestamp: new Date().toISOString(),
@@ -283,13 +285,19 @@ export async function executeRestart(
     }
 
     event.success = true;
-    await notify(config, `✅ Restart complete (${result.restartScope})`);
+    log(`[Restart] Restart complete (${result.restartScope})`);
   } catch (err) {
     event.error = err instanceof Error ? err.message : String(err);
-    await notify(config, `🚨 Restart FAILED: ${event.error}`);
     log(`[Restart] Failed: ${event.error}`);
   }
 
   restartHistory.push(event);
   return event.success;
+}
+
+/**
+ * Get recent restart history (for status page / debugging).
+ */
+export function getRestartHistory(): RestartEvent[] {
+  return [...restartHistory];
 }

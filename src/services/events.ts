@@ -1,27 +1,29 @@
 /**
- * Monitoring Event Publisher
+ * Event Publisher
  *
- * Publishes monitoring events (restarts, alerts, resolutions) to Postgres
- * for consumption by the status page via packages/monitor.
+ * Writes watchdog events (restarts, lifecycle) directly to Postgres.
+ * The services monitor will pick these up for display on the status page.
  */
 
+import pg from 'pg';
 import type { Config } from '../config.js';
 import type { DetectionResult, RestartScope, Layer } from '../types.js';
 import { log } from '../logger.js';
 
-export type MonitoringEventType =
+const { Pool } = pg;
+
+export type WatchdogEventType =
   | 'RESTART'
-  | 'ALERT'
-  | 'RESOLVED'
-  | 'MONITORING_START'
-  | 'MONITORING_STOP';
+  | 'RESTART_FAILED'
+  | 'WATCHDOG_START'
+  | 'WATCHDOG_STOP';
 
-export type MonitoringSeverity = 'INFO' | 'WARNING' | 'CRITICAL';
+export type EventSeverity = 'INFO' | 'WARNING' | 'CRITICAL';
 
-export interface MonitoringEvent {
-  eventType: MonitoringEventType;
+export interface WatchdogEvent {
+  eventType: WatchdogEventType;
   condition?: string;
-  severity?: MonitoringSeverity;
+  severity?: EventSeverity;
   scope?: RestartScope;
   affectedNodes?: string[];
   affectedLayers?: Layer[];
@@ -31,49 +33,79 @@ export interface MonitoringEvent {
 }
 
 /**
- * Event publisher that POSTs to the monitor service.
- * Falls back gracefully if monitor is unavailable.
+ * Event publisher that writes directly to Postgres.
+ * Falls back gracefully if Postgres is unavailable.
  */
 export class EventPublisher {
-  private monitorUrl: string | undefined;
-  private apiKey: string | undefined;
+  private pool: pg.Pool | null = null;
+  private postgresAvailable: boolean = true;
 
   constructor(config: Config) {
-    this.monitorUrl = config.monitorUrl;
-    this.apiKey = config.monitorApiKey;
+    this.initPostgres(config);
   }
 
-  /**
-   * Publish an event to the monitoring database.
-   * Fire-and-forget — doesn't throw on failure.
-   */
-  async publish(event: MonitoringEvent): Promise<void> {
-    if (!this.monitorUrl) {
-      log(`[Events] No monitor URL configured, skipping event: ${event.eventType}`);
+  private initPostgres(config: Config): void {
+    if (!config.postgresUrl) {
+      log('[Events] No Postgres URL configured, event publishing disabled');
+      this.postgresAvailable = false;
       return;
     }
 
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (this.apiKey) {
-        headers['Authorization'] = `Bearer ${this.apiKey}`;
-      }
-
-      const response = await fetch(`${this.monitorUrl}/api/monitoring/events`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(event),
+      this.pool = new Pool({
+        connectionString: config.postgresUrl,
+        max: 5,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 5000,
       });
 
-      if (!response.ok) {
-        log(`[Events] Failed to publish event: ${response.status} ${response.statusText}`);
-      } else {
-        log(`[Events] Published ${event.eventType}: ${event.condition ?? event.message ?? 'ok'}`);
-      }
+      this.pool.on('error', (err) => {
+        log(`[Events] Postgres pool error: ${err.message}`);
+        this.postgresAvailable = false;
+      });
     } catch (err) {
-      log(`[Events] Failed to publish event: ${err}`);
+      log(`[Events] Failed to initialize Postgres: ${err}`);
+      this.postgresAvailable = false;
+    }
+  }
+
+  /**
+   * Publish an event to the monitoring_events table.
+   * Fire-and-forget — doesn't throw on failure.
+   */
+  async publish(event: WatchdogEvent): Promise<void> {
+    if (!this.pool || !this.postgresAvailable) {
+      log(`[Events] Postgres unavailable, skipping event: ${event.eventType}`);
+      return;
+    }
+
+    try {
+      await this.pool.query(
+        `INSERT INTO monitoring_events 
+         (event_type, condition, severity, scope, affected_nodes, affected_layers, success, message, details)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          event.eventType,
+          event.condition ?? null,
+          event.severity ?? 'INFO',
+          event.scope ?? null,
+          event.affectedNodes ?? null,
+          event.affectedLayers ?? null,
+          event.success ?? null,
+          event.message ?? null,
+          event.details ? JSON.stringify(event.details) : null,
+        ]
+      );
+
+      log(`[Events] Published ${event.eventType}: ${event.condition ?? event.message ?? 'ok'}`);
+    } catch (err) {
+      // Check for table not exists error
+      if (err instanceof Error && err.message.includes('does not exist')) {
+        log('[Events] monitoring_events table does not exist, skipping event publishing');
+        this.postgresAvailable = false;
+      } else {
+        log(`[Events] Failed to publish event: ${err}`);
+      }
     }
   }
 
@@ -87,7 +119,7 @@ export class EventPublisher {
     error?: string,
   ): Promise<void> {
     await this.publish({
-      eventType: 'RESTART',
+      eventType: success ? 'RESTART' : 'RESTART_FAILED',
       condition: detection.condition,
       severity: 'CRITICAL',
       scope,
@@ -105,50 +137,23 @@ export class EventPublisher {
   }
 
   /**
-   * Publish an alert event.
-   */
-  async publishAlert(
-    condition: string,
-    severity: MonitoringSeverity,
-    message: string,
-    affectedNodes?: string[],
-    affectedLayers?: Layer[],
-    details?: Record<string, unknown>,
-  ): Promise<void> {
-    await this.publish({
-      eventType: 'ALERT',
-      condition,
-      severity,
-      affectedNodes,
-      affectedLayers,
-      message,
-      details,
-    });
-  }
-
-  /**
-   * Publish a resolution event (alert condition cleared).
-   */
-  async publishResolved(
-    condition: string,
-    message: string,
-  ): Promise<void> {
-    await this.publish({
-      eventType: 'RESOLVED',
-      condition,
-      severity: 'INFO',
-      message,
-    });
-  }
-
-  /**
-   * Publish monitoring service lifecycle events.
+   * Publish watchdog lifecycle events.
    */
   async publishLifecycle(started: boolean): Promise<void> {
     await this.publish({
-      eventType: started ? 'MONITORING_START' : 'MONITORING_STOP',
+      eventType: started ? 'WATCHDOG_START' : 'WATCHDOG_STOP',
       severity: 'INFO',
-      message: started ? 'Monitoring service started' : 'Monitoring service stopped',
+      message: started ? 'Watchdog service started' : 'Watchdog service stopped',
     });
+  }
+
+  /**
+   * Close the connection pool.
+   */
+  async close(): Promise<void> {
+    if (this.pool) {
+      await this.pool.end();
+      this.pool = null;
+    }
   }
 }

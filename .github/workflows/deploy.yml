@@ -1,9 +1,9 @@
-name: Deploy Monitoring Stack
+name: Deploy Watchdog
 
 on:
   # Deploy after image is built
   workflow_run:
-    workflows: ["Build Health Monitor Image"]
+    workflows: ["Build Watchdog Image"]
     types:
       - completed
     branches:
@@ -21,43 +21,13 @@ on:
           - staging
 
 env:
-  DEPLOY_HOST: ${{ secrets.ALERT_SERVER_IP }}
+  DEPLOY_HOST: ${{ secrets.SERVICES_SERVER_IP }}
   DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
 jobs:
-  validate:
-    name: Validate Configuration
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Validate Prometheus config
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            prom/prometheus:v2.50.0 \
-            promtool check config /workspace/prometheus/prometheus.yml.template || true
-          
-          # Check alert rules
-          for file in prometheus/alert_rules/*.yml; do
-            echo "Checking $file..."
-            docker run --rm \
-              -v ${{ github.workspace }}:/workspace \
-              prom/prometheus:v2.50.0 \
-              promtool check rules /workspace/$file
-          done
-
-      - name: Validate Alertmanager config
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            prom/alertmanager:v0.27.0 \
-            amtool check-config /workspace/alertmanager/alertmanager.yml || true
-
   deploy:
-    name: Deploy to Alerts Server
+    name: Deploy Watchdog Container
     runs-on: ubuntu-latest
-    needs: validate
     # Deploy on workflow_run only if build succeeded, or always on workflow_dispatch
     if: |
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
@@ -65,8 +35,6 @@ jobs:
     environment: production
     
     steps:
-      - uses: actions/checkout@v6
-
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.1
         with:
@@ -77,54 +45,34 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ env.DEPLOY_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Sync files
-        run: |
-          rsync -avz --delete \
-            --exclude '.git' \
-            --exclude '.github' \
-            --exclude '.env' \
-            --exclude 'prometheus/prometheus.yml' \
-            ./ ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:/opt/ottochain-monitoring/
-
-      - name: Generate config and restart
+      - name: Deploy watchdog
         run: |
           ssh ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} << 'EOF'
-            cd /opt/ottochain-monitoring
+            cd /opt/ottochain-deploy
             
-            # Generate prometheus.yml from template
-            if [ -f .env ]; then
-              set -a
-              source .env
-              set +a
-            fi
-            
-            envsubst < prometheus/prometheus.yml.template > prometheus/prometheus.yml
-            
-            # Reload Prometheus (hot reload, no restart)
-            curl -X POST http://localhost:9090/-/reload || true
-            
-            # Login to GHCR to pull health-monitor image
+            # Login to GHCR
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin || true
             
-            # Restart stack if containers need updating
-            docker compose pull
-            docker compose up -d
+            # Pull latest watchdog image
+            docker compose -f compose/watchdog.yml pull
             
-            echo "Deployment complete!"
+            # Restart watchdog
+            docker compose -f compose/watchdog.yml up -d
+            
+            echo "Watchdog deployment complete!"
           EOF
 
       - name: Health check
         run: |
           sleep 10
           ssh ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }} << 'EOF'
-            cd /opt/ottochain-monitoring
-            ./scripts/healthcheck.sh
+            docker ps --filter name=watchdog --format "table {{.Names}}\t{{.Status}}"
           EOF
 
   notify:
     name: Notify on Failure
     runs-on: ubuntu-latest
-    needs: [validate, deploy]
+    needs: deploy
     if: failure()
     steps:
       - name: Send failure notification
@@ -132,4 +80,4 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d parse_mode="HTML" \
-            -d text="⚠️ <b>Monitoring Deployment Failed</b>%0A%0ARepository: ottochain-monitoring%0ABranch: ${{ github.ref_name }}%0ACommit: ${{ github.sha }}%0A%0A<a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>View Workflow</a>"
+            -d text="⚠️ <b>Watchdog Deployment Failed</b>%0A%0ARepository: ottochain-watchdog%0ABranch: ${{ github.ref_name }}%0ACommit: ${{ github.sha }}%0A%0A<a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>View Workflow</a>"

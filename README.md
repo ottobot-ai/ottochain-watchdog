@@ -1,222 +1,223 @@
-# OttoChain Monitoring Stack
+# OttoChain Watchdog
 
-Centralized monitoring for OttoChain infrastructure using Prometheus, Grafana, and Alertmanager.
+Self-healing watchdog for OttoChain metagraph infrastructure. Reads health data from the services monitor (via Redis/Postgres) and restarts nodes via SSH when problems are detected.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        ALERTS SERVER                                │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌────────────┐ │
-│  │ Prometheus  │  │ Alertmanager│  │   Grafana   │  │    Loki    │ │
-│  │   :9090     │  │    :9093    │  │    :3000    │  │   :3100    │ │
-│  └──────┬──────┘  └─────────────┘  └─────────────┘  └────────────┘ │
-│         │ scrapes                                                   │
-└─────────┼───────────────────────────────────────────────────────────┘
-          │
-          ├────────────────────────────────────────────┐
-          │                                            │
-          ▼                                            ▼
-┌─────────────────────────────────────┐  ┌──────────────────────────────┐
-│         SERVICES SERVER             │  │     METAGRAPH NODES          │
-│  ┌─────────┐ ┌─────────┐ ┌───────┐  │  │  GL0 │ ML0 │ CL1 │ DL1      │
-│  │ bridge  │ │ indexer │ │gateway│  │  │ :9000│:9200│:9300│:9400     │
-│  │ monitor │ │postgres │ │ redis │  │  │  /metrics endpoints         │
-│  └─────────┘ └─────────┘ └───────┘  │  │                              │
-│  node-exporter:9100                 │  │  node-exporter:9100          │
-│  postgres-exporter:9187             │  │                              │
-│  redis-exporter:9121                │  │                              │
-└─────────────────────────────────────┘  └──────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    SERVICES MONITOR                                      │
+│  (packages/monitor in ottochain-services)                               │
+│                                                                          │
+│  Polls all nodes every 10s                                              │
+│  └──→ Caches health in Redis (monitor:health:latest)                    │
+│  └──→ Stores events in Postgres (monitoring_events table)               │
+│  └──→ Serves status.ottochain.ai                                        │
+└──────────────────────────────┬───────────────────────────────────────────┘
+                               │
+                     ┌─────────▼─────────┐
+                     │ Redis + Postgres  │
+                     └─────────┬─────────┘
+                               │
+┌──────────────────────────────▼───────────────────────────────────────────┐
+│                       WATCHDOG (this service)                            │
+│                                                                          │
+│  1. Read health from Redis/Postgres (PRIMARY)                           │
+│     - Falls back to direct HTTP if Redis stale (>60s)                   │
+│                                                                          │
+│  2. Evaluate conditions:                                                 │
+│     - ForkedCluster (cluster POV divergence)                            │
+│     - SnapshotsStopped (ML0 ordinal stall)                              │
+│     - UnhealthyNodes (unreachable, stuck states)                        │
+│                                                                          │
+│  3. If restart needed:                                                   │
+│     - SSH into nodes                                                     │
+│     - Docker stop/start containers                                       │
+│     - Rejoin to cluster                                                  │
+│                                                                          │
+│  4. Write restart events to Postgres                                     │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    PROMETHEUS + ALERTMANAGER                             │
+│  (deployed via ottochain-deploy/monitoring)                              │
+│                                                                          │
+│  - Scrapes /metrics from all nodes                                       │
+│  - Evaluates alert rules                                                 │
+│  - Sends notifications to Telegram                                       │
+│                                                                          │
+│  NOTE: The watchdog does NOT send alerts. Alertmanager owns alerting.    │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Quick Start
+## How It Works
 
-### 1. Clone and configure
+### Data Sources
 
-```bash
-git clone https://github.com/ottobot-ai/ottochain-monitoring.git
-cd ottochain-monitoring
+**Primary: Redis** (populated by services monitor)
+- Key: `monitor:health:latest`
+- Updated every 10 seconds
+- Contains node health, layer states, ordinals, cluster info
 
-# Copy and edit environment file
-cp .env.example .env
-nano .env  # Add your Telegram credentials, server IPs, etc.
-```
+**Fallback: Direct HTTP** (used when Redis is stale or unavailable)
+- Polls `/node/info` and `/cluster/info` on each node
+- Automatically triggered when Redis data is >60s old
+- Logs clearly when fallback is active
 
-### 2. Generate Prometheus config
+### Condition Detection
 
-```bash
-./scripts/generate-config.sh
-```
+All condition detectors are **pure functions** that operate on health snapshot data:
 
-### 3. Deploy monitoring stack (alerts server)
+| Condition | What It Detects | Restart Scope |
+|-----------|-----------------|---------------|
+| `ForkedCluster` | Nodes disagree on cluster membership | Individual node or full layer |
+| `SnapshotsStopped` | ML0 ordinal unchanged for >4 minutes | Full metagraph |
+| `UnhealthyNodes` | Unreachable nodes or stuck states | Individual node, layer, or metagraph |
 
-```bash
-docker compose up -d
-```
+### Restart Strategies
 
-### 4. Deploy exporters (on each target server)
+1. **Individual Node** — Kill and rejoin a single node to a healthy reference
+2. **Full Layer** — Kill all nodes in a layer, restart with genesis, join validators
+3. **Full Metagraph** — Kill all layers in reverse order, restart ML0→CL1/DL1
 
-On services server:
-```bash
-cd exporters
-docker compose --profile services up -d
-```
+### Safeguards
 
-On metagraph node(s):
-```bash
-cd exporters
-docker compose up -d  # Just node-exporter
-```
-
-### 5. Access services
-
-- **Grafana**: http://your-alerts-server:3000 (default: admin/admin)
-- **Prometheus**: http://your-alerts-server:9090
-- **Alertmanager**: http://your-alerts-server:9093
-
-## Components
-
-### Core Stack
-
-| Service | Port | Description |
-|---------|------|-------------|
-| Prometheus | 9090 | Metrics collection & alerting engine |
-| Alertmanager | 9093 | Alert routing & notification |
-| Grafana | 3000 | Visualization & dashboards |
-| Loki | 3100 | Log aggregation (optional) |
-
-### Exporters
-
-| Exporter | Port | Description |
-|----------|------|-------------|
-| node-exporter | 9100 | System metrics (CPU, memory, disk) |
-| postgres-exporter | 9187 | PostgreSQL metrics |
-| redis-exporter | 9121 | Redis metrics |
-
-### Scraped Endpoints
-
-| Target | Port | Metrics Path |
-|--------|------|--------------|
-| GL0 (Global L0) | 9000 | /metrics |
-| ML0 (Metagraph L0) | 9200 | /metrics |
-| CL1 (Currency L1) | 9300 | /metrics |
-| DL1 (Data L1) | 9400 | /metrics |
-| Monitor Service | 3032 | /metrics |
+- **Cooldown**: 10 minutes between restarts (configurable)
+- **Rate Limit**: Max 6 restarts per hour (configurable)
+- **Escalation**: Individual restarts escalate to layer/metagraph if no healthy reference exists
 
 ## Configuration
 
 ### Environment Variables
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token for alerts | Yes |
-| `TELEGRAM_CHAT_ID` | Telegram chat ID for alerts | Yes |
-| `ALERT_SERVER_IP` | IP of the monitoring server | Yes |
-| `METAGRAPH_HOST` | IP of the metagraph node(s) | Yes |
-| `SERVICES_HOST` | IP of the services server | Yes |
-| `GRAFANA_ADMIN_PASSWORD` | Grafana admin password | Yes |
-| `POSTGRES_USER` | PostgreSQL username (for exporter) | For services |
-| `POSTGRES_PASSWORD` | PostgreSQL password | For services |
-| `POSTGRES_DB` | PostgreSQL database name | For services |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `NODE_IPS` | Comma-separated list of node IPs | `10.0.0.1,10.0.0.2,10.0.0.3` |
+| `NODE_NAMES` | Comma-separated list of node names | `node1,node2,node3` |
+| `SSH_KEY_PATH` | Path to SSH private key | `/root/.ssh/hetzner_ottobot` |
+| `SSH_USER` | SSH username | `root` |
+| `REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
+| `DATABASE_URL` | Postgres connection URL | `postgresql://ottochain:...@localhost:5432/ottochain` |
+| `HEALTH_DATA_STALE_SECONDS` | Threshold before Redis data is considered stale | `60` |
+| `SNAPSHOT_STALL_MINUTES` | Minutes of no ML0 ordinal change before restart | `4` |
+| `HEALTH_CHECK_INTERVAL` | Seconds between health checks | `60` |
+| `RESTART_COOLDOWN_MINUTES` | Minutes to wait between restarts | `10` |
+| `MAX_RESTARTS_PER_HOUR` | Maximum restarts allowed per hour | `6` |
 
-### Alert Rules
+### Layer Ports
 
-Alert rules are organized in `prometheus/alert_rules/`:
+| Variable | Layer | Default |
+|----------|-------|---------|
+| `GL0_PORT` | Global L0 | `9000` |
+| `ML0_PORT` | Metagraph L0 | `9200` |
+| `CL1_PORT` | Currency L1 | `9300` |
+| `DL1_PORT` | Data L1 | `9400` |
 
-- **nodes.yml** - Tessellation node health (GL0, ML0, CL1, DL1)
-- **services.yml** - OttoChain services (monitor, bridge, etc.)
-- **infrastructure.yml** - System resources (CPU, memory, disk)
+## Deployment
 
-### Adding Custom Dashboards
-
-1. Create JSON dashboard in `grafana/provisioning/dashboards/`
-2. Restart Grafana: `docker compose restart grafana`
-
-## Alert Integrations
-
-### Telegram (Default)
-
-Alerts are sent via Telegram. Configure in `.env`:
+The watchdog is deployed via `ottochain-deploy`:
 
 ```bash
-TELEGRAM_BOT_TOKEN=your-bot-token
-TELEGRAM_CHAT_ID=-100123456789
+# In ottochain-deploy repo
+docker compose -f compose/watchdog.yml up -d
 ```
 
-### Webhook (OpenClaw Integration)
+### Docker Image
 
-To receive alerts in OpenClaw, add webhook receiver in `alertmanager/alertmanager.yml`:
-
-```yaml
-receivers:
-  - name: 'openclaw'
-    webhook_configs:
-      - url: 'http://OPENCLAW_HOST:PORT/webhook/alertmanager'
-        send_resolved: true
+```
+ghcr.io/ottobot-ai/ottochain-watchdog:latest
 ```
 
-## API Access
+### Required Mounts
 
-Query Prometheus directly for alert status:
+- SSH key for node access: `/home/watchdog/.ssh/id_rsa`
+
+## Development
+
+### Prerequisites
+
+- Node.js 20+
+- Redis (optional, for testing with real data)
+- Postgres (optional, for event publishing)
+
+### Setup
 
 ```bash
-# Get firing alerts
-curl -s http://ALERT_SERVER:9090/api/v1/alerts | jq '.data.alerts[]'
+# Clone the repo
+git clone https://github.com/ottobot-ai/ottochain-watchdog.git
+cd ottochain-watchdog
 
-# Get all targets and their health
-curl -s http://ALERT_SERVER:9090/api/v1/targets | jq '.data.activeTargets[] | {job: .labels.job, health: .health}'
+# Install dependencies
+npm install
 
-# Alertmanager - current alerts
-curl -s http://ALERT_SERVER:9093/api/v2/alerts | jq '.'
+# Copy environment file
+cp .env.example .env
+# Edit .env with your values
 ```
 
-## Maintenance
-
-### Reload Prometheus config (no restart)
+### Running
 
 ```bash
-curl -X POST http://localhost:9090/-/reload
+# Development (single check)
+npm run dev
+
+# Development (daemon mode)
+npm run dev -- --daemon
+
+# Production build
+npm run build
+npm start -- --daemon
 ```
 
-### Check configuration validity
+### Testing
 
 ```bash
-docker compose exec prometheus promtool check config /etc/prometheus/prometheus.yml
-docker compose exec alertmanager amtool check-config /etc/alertmanager/alertmanager.yml
+# Run tests
+npm test
+
+# Watch mode
+npm run test:watch
 ```
 
-### View logs
+## Event Publishing
 
-```bash
-docker compose logs -f prometheus
-docker compose logs -f alertmanager
-docker compose logs -f grafana
-```
+The watchdog writes events to the `monitoring_events` Postgres table:
 
-### Backup Grafana dashboards
+| Event Type | When |
+|------------|------|
+| `WATCHDOG_START` | Service started |
+| `WATCHDOG_STOP` | Service stopped (graceful shutdown) |
+| `RESTART` | Successful restart completed |
+| `RESTART_FAILED` | Restart attempt failed |
 
-Dashboards are provisioned from files, so they're automatically backed up via git.
-For runtime changes, export from Grafana UI and commit to this repo.
+These events are displayed on the status page (via services monitor).
+
+## Relationship to Other Components
+
+| Component | Role | Repository |
+|-----------|------|------------|
+| **Services Monitor** | Polls nodes, caches health, serves status page | `ottochain-services/packages/monitor` |
+| **Watchdog** (this) | Reads health, restarts nodes | `ottochain-watchdog` |
+| **Prometheus/Alertmanager** | Scrapes metrics, sends alerts | `ottochain-deploy/monitoring` |
+| **Deploy Config** | Compose files, monitoring configs | `ottochain-deploy` |
 
 ## Troubleshooting
 
-### Prometheus can't scrape targets
+### Watchdog using direct HTTP instead of Redis
 
-1. Check target is reachable: `curl http://TARGET:PORT/metrics`
-2. Check firewall allows traffic from alerts server
-3. Verify prometheus.yml has correct IPs
+1. Check Redis is running: `redis-cli ping`
+2. Check services monitor is writing to Redis: `redis-cli GET monitor:health:latest`
+3. Check `REDIS_URL` environment variable is correct
 
-### Alerts not firing
+### Restarts not happening
 
-1. Check rule syntax: `promtool check rules prometheus/alert_rules/*.yml`
-2. View Prometheus alerts page: http://localhost:9090/alerts
-3. Check Alertmanager received alert: http://localhost:9093/#/alerts
+1. Check cooldown hasn't been hit: look for "Cooldown active" in logs
+2. Check rate limit: look for "Restart loop detected" in logs
+3. Verify SSH key is mounted and has correct permissions
 
-### Telegram notifications not working
+### Can't connect to Postgres
 
-1. Verify bot token and chat ID in alertmanager.yml
-2. Test manually: `curl -s "https://api.telegram.org/bot<TOKEN>/sendMessage?chat_id=<ID>&text=test"`
-3. Check alertmanager logs: `docker compose logs alertmanager`
+Events are optional — the watchdog will continue to function without Postgres, just won't record events. Check `DATABASE_URL` if you need event recording.
 
 ## License
 

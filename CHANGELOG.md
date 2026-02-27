@@ -1,16 +1,54 @@
 # Changelog
 
-## 1.0.0 (2026-02-26)
+All notable changes to this project will be documented in this file.
 
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### Features
+## [0.2.0] - 2026-02-27
 
-* add release workflow with deploy notification ([#1](https://github.com/ottobot-ai/ottochain-monitoring/issues/1)) ([113bcad](https://github.com/ottobot-ai/ottochain-monitoring/commit/113bcad43e65a18e93b55f69c599531c2f384f6e))
-* **ci:** add release-please for automated releases ([3513407](https://github.com/ottobot-ai/ottochain-monitoring/commit/35134073aeaf419ae2ebdb97f36a5b053033caa1))
-* **ci:** add release-please for automated releases ([293369e](https://github.com/ottobot-ai/ottochain-monitoring/commit/293369eb24fa4bed2e5175fab600d305ace4a8d0))
-* **stability:** implement resource + tessellation alert rules — 69/69 tests ([#5](https://github.com/ottobot-ai/ottochain-monitoring/issues/5)) ([e7ed1b9](https://github.com/ottobot-ai/ottochain-monitoring/commit/e7ed1b9356c55f55be1c20b53b71e0072e6c0be6))
+### Changed
 
+- **Renamed project**: `ottochain-health-monitor` → `ottochain-watchdog`
+- **Refactored to consumer model**: Reads health data from Redis/Postgres (populated by services monitor) instead of polling nodes directly
+- **Condition detectors are now pure functions**: Accept `HealthSnapshot` data instead of making HTTP calls
+- **Event publishing**: Changed from HTTP POST to direct Postgres INSERT
+- **Docker image**: Now `ghcr.io/ottobot-ai/ottochain-watchdog`
 
-### Bug Fixes
+### Added
 
-* remove invalid secrets reference in workflow if condition ([94eb315](https://github.com/ottobot-ai/ottochain-monitoring/commit/94eb3157f4897e8b22d9070f549cd11809fc352a))
+- Redis client (`ioredis`) for reading cached health data
+- Postgres client (`pg`) for reading events and writing restart events
+- `health-reader.ts` service for unified health data access with automatic fallback
+- Configurable stale data threshold (`HEALTH_DATA_STALE_SECONDS`, default 60)
+- Clear logging when using Redis vs direct HTTP fallback
+
+### Removed
+
+- **Monitoring configs**: `alertmanager/`, `grafana/`, `loki/`, `prometheus/` directories (moved to `ottochain-deploy/monitoring/`)
+- **Docker compose stack**: `docker-compose.yml`, `docker-compose.exporters.yml` (compose configs now in `ottochain-deploy`)
+- **Config generation scripts**: `scripts/` directory
+- **Alert evaluation**: `src/alerts/` directory (Prometheus/Alertmanager handles alerting)
+- **Webhook notifications**: `src/services/notify.ts` (Alertmanager handles notifications)
+- **Independent health polling**: Watchdog no longer polls nodes directly except as fallback
+
+### Migration Notes
+
+- The watchdog now requires Redis and Postgres to be running (or falls back gracefully)
+- Monitoring stack (Prometheus, Grafana, Alertmanager) is now deployed separately via `ottochain-deploy`
+- Alert rules are now managed in `ottochain-deploy/monitoring/prometheus/alert_rules/`
+- Environment variables `WEBHOOK_URL`, `MONITOR_URL`, `MONITOR_API_KEY` are no longer used
+
+## [0.1.0] - 2026-02-06
+
+### Added
+
+- Initial release
+- Fork detection across metagraph layers
+- Snapshot stall detection (ML0 ordinal tracking)
+- Unhealthy node detection
+- SSH-based restart orchestration (individual, layer, full metagraph)
+- Cooldown and rate limiting for restarts
+- Event publishing to monitor service via HTTP
+- Prometheus, Grafana, Alertmanager, Loki configuration
+- Docker image build and deploy workflows

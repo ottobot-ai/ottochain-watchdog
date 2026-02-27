@@ -35,6 +35,31 @@ export interface NodeHealth {
   lastSnapshotHash?: string;
 }
 
+/** Layer health from a single node (used by health-reader) */
+export interface LayerHealth {
+  layer: Layer;
+  state: string;
+  ordinal: number;
+  reachable: boolean;
+  clusterSize: number;
+  clusterHash?: string;
+}
+
+/** Health data for a single node (used by health-reader) */
+export interface NodeHealthData {
+  ip: string;
+  name: string;
+  layers: LayerHealth[];
+}
+
+/** Complete health snapshot from Redis or direct polling */
+export interface HealthSnapshot {
+  timestamp: Date;
+  nodes: NodeHealthData[];
+  stale: boolean;
+  source: 'redis' | 'direct';
+}
+
 /** Detection result */
 export interface DetectionResult {
   detected: boolean;
@@ -57,3 +82,6 @@ export interface RestartEvent {
   success: boolean;
   error?: string;
 }
+
+/** Stuck/bad states that indicate unhealthy nodes */
+export const STUCK_STATES = new Set(['WaitingForDownload', 'Leaving', 'Offline', 'DownloadInProgress', 'Unreachable']);

@@ -1,4 +1,4 @@
-name: Build Health Monitor Image
+name: Build Watchdog Image
 
 on:
   push:
@@ -16,7 +16,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ottobot-ai/ottochain-health-monitor
+  IMAGE_NAME: ottobot-ai/ottochain-watchdog
 
 jobs:
   build:

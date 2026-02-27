@@ -2,7 +2,7 @@
  * Fork Detection Tests
  *
  * Tests for cluster fork detection logic.
- * Ported from PR #4 (packages/health-monitor/test/cluster.test.ts)
+ * Tests both the pure function (snapshot-based) and legacy (direct HTTP) modes.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -11,11 +11,13 @@ import {
   findMajority,
   checkLayerFork,
   detectForkedCluster,
+  checkLayerForkFromSnapshot,
+  detectForkedClusterFromSnapshot,
   type NodePOV,
   type ClusterFetchFn,
 } from './forked-cluster.js';
 import type { Config } from '../config.js';
-import type { ClusterMember } from '../types.js';
+import type { ClusterMember, HealthSnapshot, LayerHealth } from '../types.js';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -36,6 +38,9 @@ function makeConfig(nodeCount: number = 3): Config {
     healthCheckIntervalSeconds: 60,
     restartCooldownMinutes: 10,
     maxRestartsPerHour: 6,
+    redisUrl: 'redis://localhost:6379',
+    postgresUrl: '',
+    healthDataStaleSeconds: 60,
     daemon: false,
     once: false,
   };
@@ -43,6 +48,30 @@ function makeConfig(nodeCount: number = 3): Config {
 
 function makeMember(id: string, state = 'Ready'): ClusterMember {
   return { id, state };
+}
+
+function makeSnapshot(nodeLayerData: Array<{
+  ip: string;
+  name: string;
+  layers: Array<{ layer: string; clusterHash?: string; reachable?: boolean }>;
+}>): HealthSnapshot {
+  return {
+    timestamp: new Date(),
+    stale: false,
+    source: 'redis',
+    nodes: nodeLayerData.map(n => ({
+      ip: n.ip,
+      name: n.name,
+      layers: n.layers.map(l => ({
+        layer: l.layer as LayerHealth['layer'],
+        state: 'Ready',
+        ordinal: 100,
+        reachable: l.reachable ?? true,
+        clusterSize: 3,
+        clusterHash: l.clusterHash,
+      })),
+    })),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -77,9 +106,9 @@ describe('hashClusterPOV()', () => {
 describe('findMajority()', () => {
   it('identifies correct majority when 2 of 3 nodes agree', () => {
     const povs: NodePOV[] = [
-      { ip: '10.0.0.1', hash: 'abc123', members: [makeMember('p1')] },
-      { ip: '10.0.0.2', hash: 'abc123', members: [makeMember('p1')] },
-      { ip: '10.0.0.3', hash: 'xyz789', members: [makeMember('p2')] }, // minority
+      { ip: '10.0.0.1', hash: 'abc123', reachable: true },
+      { ip: '10.0.0.2', hash: 'abc123', reachable: true },
+      { ip: '10.0.0.3', hash: 'xyz789', reachable: true }, // minority
     ];
 
     const result = findMajority(povs);
@@ -91,9 +120,9 @@ describe('findMajority()', () => {
 
   it('identifies unreachable nodes separately from minority', () => {
     const povs: NodePOV[] = [
-      { ip: '10.0.0.1', hash: 'abc123', members: [makeMember('p1')] },
-      { ip: '10.0.0.2', hash: 'abc123', members: [makeMember('p1')] },
-      { ip: '10.0.0.3', hash: '', members: [], error: 'ECONNREFUSED' },
+      { ip: '10.0.0.1', hash: 'abc123', reachable: true },
+      { ip: '10.0.0.2', hash: 'abc123', reachable: true },
+      { ip: '10.0.0.3', hash: '', reachable: false, error: 'ECONNREFUSED' },
     ];
 
     const result = findMajority(povs);
@@ -104,9 +133,9 @@ describe('findMajority()', () => {
 
   it('all nodes agree → no minority', () => {
     const povs: NodePOV[] = [
-      { ip: '10.0.0.1', hash: 'same', members: [] },
-      { ip: '10.0.0.2', hash: 'same', members: [] },
-      { ip: '10.0.0.3', hash: 'same', members: [] },
+      { ip: '10.0.0.1', hash: 'same', reachable: true },
+      { ip: '10.0.0.2', hash: 'same', reachable: true },
+      { ip: '10.0.0.3', hash: 'same', reachable: true },
     ];
 
     const result = findMajority(povs);
@@ -116,9 +145,9 @@ describe('findMajority()', () => {
 
   it('all unreachable → empty majority', () => {
     const povs: NodePOV[] = [
-      { ip: '10.0.0.1', hash: '', members: [], error: 'timeout' },
-      { ip: '10.0.0.2', hash: '', members: [], error: 'timeout' },
-      { ip: '10.0.0.3', hash: '', members: [], error: 'timeout' },
+      { ip: '10.0.0.1', hash: '', reachable: false, error: 'timeout' },
+      { ip: '10.0.0.2', hash: '', reachable: false, error: 'timeout' },
+      { ip: '10.0.0.3', hash: '', reachable: false, error: 'timeout' },
     ];
 
     const result = findMajority(povs);
@@ -128,8 +157,8 @@ describe('findMajority()', () => {
 
   it('handles tie by picking first seen', () => {
     const povs: NodePOV[] = [
-      { ip: '10.0.0.1', hash: 'aaa', members: [] },
-      { ip: '10.0.0.2', hash: 'bbb', members: [] },
+      { ip: '10.0.0.1', hash: 'aaa', reachable: true },
+      { ip: '10.0.0.2', hash: 'bbb', reachable: true },
     ];
 
     const result = findMajority(povs);
@@ -139,10 +168,133 @@ describe('findMajority()', () => {
 });
 
 // ---------------------------------------------------------------------------
-// checkLayerFork tests
+// checkLayerForkFromSnapshot tests (pure function)
 // ---------------------------------------------------------------------------
 
-describe('checkLayerFork()', () => {
+describe('checkLayerForkFromSnapshot()', () => {
+  it('detects fork when one node has different hash', () => {
+    const snapshot = makeSnapshot([
+      { ip: '10.0.0.1', name: 'node1', layers: [{ layer: 'ml0', clusterHash: 'abc123' }] },
+      { ip: '10.0.0.2', name: 'node2', layers: [{ layer: 'ml0', clusterHash: 'abc123' }] },
+      { ip: '10.0.0.3', name: 'node3', layers: [{ layer: 'ml0', clusterHash: 'xyz789' }] },
+    ]);
+
+    const result = checkLayerForkFromSnapshot(snapshot, 'ml0');
+    expect(result.forked).toBe(true);
+    expect(result.minorityNodes).toContain('10.0.0.3');
+  });
+
+  it('no fork when all nodes agree', () => {
+    const snapshot = makeSnapshot([
+      { ip: '10.0.0.1', name: 'node1', layers: [{ layer: 'ml0', clusterHash: 'same' }] },
+      { ip: '10.0.0.2', name: 'node2', layers: [{ layer: 'ml0', clusterHash: 'same' }] },
+      { ip: '10.0.0.3', name: 'node3', layers: [{ layer: 'ml0', clusterHash: 'same' }] },
+    ]);
+
+    const result = checkLayerForkFromSnapshot(snapshot, 'ml0');
+    expect(result.forked).toBe(false);
+  });
+
+  it('handles unreachable nodes', () => {
+    const snapshot = makeSnapshot([
+      { ip: '10.0.0.1', name: 'node1', layers: [{ layer: 'ml0', clusterHash: 'abc', reachable: true }] },
+      { ip: '10.0.0.2', name: 'node2', layers: [{ layer: 'ml0', clusterHash: 'abc', reachable: true }] },
+      { ip: '10.0.0.3', name: 'node3', layers: [{ layer: 'ml0', reachable: false }] },
+    ]);
+
+    const result = checkLayerForkFromSnapshot(snapshot, 'ml0');
+    expect(result.forked).toBe(false);
+    expect(result.unreachable).toContain('10.0.0.3');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectForkedClusterFromSnapshot tests (pure function)
+// ---------------------------------------------------------------------------
+
+describe('detectForkedClusterFromSnapshot()', () => {
+  it('returns detected=false when no forks', () => {
+    const config = makeConfig(3);
+    const snapshot = makeSnapshot([
+      { ip: '10.0.0.1', name: 'node1', layers: [
+        { layer: 'ml0', clusterHash: 'same' },
+        { layer: 'cl1', clusterHash: 'same' },
+        { layer: 'dl1', clusterHash: 'same' },
+      ]},
+      { ip: '10.0.0.2', name: 'node2', layers: [
+        { layer: 'ml0', clusterHash: 'same' },
+        { layer: 'cl1', clusterHash: 'same' },
+        { layer: 'dl1', clusterHash: 'same' },
+      ]},
+      { ip: '10.0.0.3', name: 'node3', layers: [
+        { layer: 'ml0', clusterHash: 'same' },
+        { layer: 'cl1', clusterHash: 'same' },
+        { layer: 'dl1', clusterHash: 'same' },
+      ]},
+    ]);
+
+    const result = detectForkedClusterFromSnapshot(config, snapshot);
+    expect(result.detected).toBe(false);
+    expect(result.condition).toBe('ForkedCluster');
+  });
+
+  it('returns detected=true with affected layer on fork', () => {
+    const config = makeConfig(3);
+    const snapshot = makeSnapshot([
+      { ip: '10.0.0.1', name: 'node1', layers: [
+        { layer: 'ml0', clusterHash: 'same' },
+        { layer: 'cl1', clusterHash: 'same' },
+        { layer: 'dl1', clusterHash: 'same' },
+      ]},
+      { ip: '10.0.0.2', name: 'node2', layers: [
+        { layer: 'ml0', clusterHash: 'same' },
+        { layer: 'cl1', clusterHash: 'same' },
+        { layer: 'dl1', clusterHash: 'same' },
+      ]},
+      { ip: '10.0.0.3', name: 'node3', layers: [
+        { layer: 'ml0', clusterHash: 'same' },
+        { layer: 'cl1', clusterHash: 'same' },
+        { layer: 'dl1', clusterHash: 'different' }, // Fork on DL1
+      ]},
+    ]);
+
+    const result = detectForkedClusterFromSnapshot(config, snapshot);
+    expect(result.detected).toBe(true);
+    expect(result.affectedLayers).toContain('dl1');
+    expect(result.affectedNodes).toContain('10.0.0.3');
+  });
+
+  it('recommends individual-node restart for single minority', () => {
+    const config = makeConfig(3);
+    const snapshot = makeSnapshot([
+      { ip: '10.0.0.1', name: 'node1', layers: [{ layer: 'ml0', clusterHash: 'same' }] },
+      { ip: '10.0.0.2', name: 'node2', layers: [{ layer: 'ml0', clusterHash: 'same' }] },
+      { ip: '10.0.0.3', name: 'node3', layers: [{ layer: 'ml0', clusterHash: 'different' }] },
+    ]);
+
+    const result = detectForkedClusterFromSnapshot(config, snapshot);
+    expect(result.restartScope).toBe('individual-node');
+  });
+
+  it('recommends full-layer restart when majority forked', () => {
+    const config = makeConfig(3);
+    const snapshot = makeSnapshot([
+      { ip: '10.0.0.1', name: 'node1', layers: [{ layer: 'ml0', clusterHash: 'a' }] },
+      { ip: '10.0.0.2', name: 'node2', layers: [{ layer: 'ml0', clusterHash: 'b' }] },
+      { ip: '10.0.0.3', name: 'node3', layers: [{ layer: 'ml0', clusterHash: 'c' }] },
+    ]);
+
+    const result = detectForkedClusterFromSnapshot(config, snapshot);
+    expect(result.detected).toBe(true);
+    expect(result.restartScope).toBe('full-layer');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Legacy direct HTTP tests
+// ---------------------------------------------------------------------------
+
+describe('checkLayerFork() [legacy]', () => {
   it('detects fork when one node disagrees', async () => {
     const config = makeConfig(3);
     const mockFetch: ClusterFetchFn = async (ip) => {
@@ -165,37 +317,9 @@ describe('checkLayerFork()', () => {
     expect(result.forked).toBe(false);
     expect(result.minorityNodes).toEqual([]);
   });
-
-  it('handles unreachable nodes gracefully', async () => {
-    const config = makeConfig(3);
-    const mockFetch: ClusterFetchFn = async (ip) => {
-      if (ip === '10.0.0.3') throw new Error('ECONNREFUSED');
-      return [makeMember('peer-a')];
-    };
-
-    const result = await checkLayerFork(config, 'ml0', mockFetch);
-    expect(result.forked).toBe(false); // Unreachable != minority
-    expect(result.unreachable).toContain('10.0.0.3');
-  });
-
-  it('treats empty cluster as potential divergence', async () => {
-    const config = makeConfig(3);
-    const mockFetch: ClusterFetchFn = async (ip) => {
-      if (ip === '10.0.0.3') return []; // Empty
-      return [makeMember('peer-a')];
-    };
-
-    const result = await checkLayerFork(config, 'ml0', mockFetch);
-    expect(result.forked).toBe(true);
-    expect(result.minorityNodes).toContain('10.0.0.3');
-  });
 });
 
-// ---------------------------------------------------------------------------
-// detectForkedCluster tests
-// ---------------------------------------------------------------------------
-
-describe('detectForkedCluster()', () => {
+describe('detectForkedCluster() [legacy]', () => {
   it('returns detected=false when no forks', async () => {
     const config = makeConfig(3);
     const mockFetch: ClusterFetchFn = async () => [makeMember('peer-a')];
@@ -203,45 +327,6 @@ describe('detectForkedCluster()', () => {
     const result = await detectForkedCluster(config, mockFetch);
     expect(result.detected).toBe(false);
     expect(result.condition).toBe('ForkedCluster');
-  });
-
-  it('returns detected=true with affected layer on fork', async () => {
-    const config = makeConfig(3);
-    const mockFetch: ClusterFetchFn = async (ip, port) => {
-      // Fork only on DL1 (port 9400)
-      if (port === 9400 && ip === '10.0.0.3') {
-        return [makeMember('different')];
-      }
-      return [makeMember('same')];
-    };
-
-    const result = await detectForkedCluster(config, mockFetch);
-    expect(result.detected).toBe(true);
-    expect(result.affectedLayers).toContain('dl1');
-    expect(result.affectedNodes).toContain('10.0.0.3');
-  });
-
-  it('recommends individual-node restart for single minority', async () => {
-    const config = makeConfig(3);
-    const mockFetch: ClusterFetchFn = async (ip) => {
-      if (ip === '10.0.0.3') return [makeMember('different')];
-      return [makeMember('same')];
-    };
-
-    const result = await detectForkedCluster(config, mockFetch);
-    expect(result.restartScope).toBe('individual-node');
-  });
-
-  it('recommends full-layer restart when majority forked', async () => {
-    const config = makeConfig(3);
-    const mockFetch: ClusterFetchFn = async (ip) => {
-      // Each node sees different cluster
-      return [makeMember(`unique-${ip}`)];
-    };
-
-    const result = await detectForkedCluster(config, mockFetch);
-    expect(result.detected).toBe(true);
-    expect(result.restartScope).toBe('full-layer');
   });
 
   it('checks layers in order: ml0, cl1, dl1', async () => {

@@ -1,7 +1,7 @@
 {
-  "name": "ottochain-health-monitor",
-  "version": "0.1.0",
-  "description": "Centralized metagraph health monitoring with fork detection and automated restart",
+  "name": "ottochain-watchdog",
+  "version": "0.2.0",
+  "description": "Self-healing watchdog for OttoChain metagraph. Reads health from services monitor, restarts nodes via SSH when needed.",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -13,13 +13,25 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "ioredis": "^5.6.1",
+    "pg": "^8.14.1",
     "ssh2": "^1.16.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.11",
     "@types/ssh2": "^1.15.0",
     "tsx": "^4.0.0",
     "typescript": "^5.7.0",
     "vitest": "^4.0.18"
-  }
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ottobot-ai/ottochain-watchdog.git"
+  },
+  "author": "OttoBot <ottobot@kd5ujc.xyz>",
+  "license": "MIT"
 }

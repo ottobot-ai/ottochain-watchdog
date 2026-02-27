@@ -1,4 +1,4 @@
-# OttoChain Health Monitor
+# OttoChain Watchdog
 # Multi-stage build for minimal production image
 
 # Build stage
@@ -28,17 +28,14 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 
 # Non-root user for security
-RUN addgroup -g 1001 -S monitor && \
-    adduser -S monitor -u 1001 -G monitor
+RUN addgroup -g 1001 -S watchdog && \
+    adduser -S watchdog -u 1001 -G watchdog
 
 # SSH key needs to be mounted at runtime for restart capabilities
-# Mount to: /home/monitor/.ssh/id_rsa
-RUN mkdir -p /home/monitor/.ssh && chown -R monitor:monitor /home/monitor/.ssh
+# Mount to: /home/watchdog/.ssh/id_rsa
+RUN mkdir -p /home/watchdog/.ssh && chown -R watchdog:watchdog /home/watchdog/.ssh
 
-USER monitor
-
-# Expose metrics port (if we add Prometheus metrics later)
-EXPOSE 3032
+USER watchdog
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \

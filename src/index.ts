@@ -60,7 +60,7 @@ async function runHealthCheck(
   // Add hypergraph condition if enabled, respecting check interval multiplier
   if (config.hypergraph?.enabled) {
     const multiplier = config.hypergraph.checkIntervalMultiplier;
-    if (cycleCount % multiplier === 0) {
+    if (cycleCount === 1 || cycleCount % multiplier === 0) {
       conditions.push({
         name: 'HypergraphHealth',
         detect: () => detectHypergraphHealth(config, snapshot),

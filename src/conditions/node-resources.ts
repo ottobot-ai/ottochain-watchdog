@@ -31,7 +31,7 @@ export async function detectNodeResourceIssues(config: Config): Promise<Detectio
       const lines = stdout.trim().split('\n');
       for (const line of lines) {
         if (line.startsWith('DISK:')) {
-          const pct = parseInt(line.replace('DISK:', '').replace('%', ''));
+          const pct = parseInt(line.replace('DISK:', '').replace(/%/g, ''));
           if (pct > DISK_WARN_PCT) {
             problems.push(`${node.name}: disk ${pct}%`);
             affectedNodes.push(node.ip);

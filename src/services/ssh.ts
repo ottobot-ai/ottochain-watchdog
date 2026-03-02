@@ -22,6 +22,15 @@ export async function sshExec(
   config: Config,
   timeoutMs = 30_000,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
+  // Validate inputs are safe (defense-in-depth; callers also use shellEscape)
+  const safeCommandPattern = /^[\x20-\x7E\n]+$/;
+  if (!safeCommandPattern.test(command)) {
+    throw new Error(`Unsafe command rejected: ${command.slice(0, 80)}`);
+  }
+  if (!/^[\d.]+$/.test(ip)) {
+    throw new Error(`Invalid IP rejected: ${ip}`);
+  }
+
   return new Promise((resolve, reject) => {
     const conn = new Client();
     const timer = setTimeout(() => {

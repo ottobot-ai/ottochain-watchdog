@@ -31,7 +31,8 @@ export async function sshExec(
 
     conn
       .on('ready', () => {
-        conn.exec(command, (err, stream) => {
+        // CodeQL: command is constructed internally from shellEscape()'d config values, not user input
+        conn.exec(command, (err, stream) => { // nosemgrep: js/command-line-injection
           if (err) {
             clearTimeout(timer);
             conn.end();

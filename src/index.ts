@@ -70,11 +70,14 @@ async function runHealthCheck(
     }
   }
 
+  let issuesDetected = 0;
+
   for (const condition of conditions) {
     try {
       const result = await condition.detect();
 
       if (result.detected) {
+        issuesDetected++;
         log(`[Monitor] Condition detected: ${condition.name} — ${result.details}`);
 
         if (result.restartScope === 'none') {
@@ -100,7 +103,11 @@ async function runHealthCheck(
     }
   }
 
-  log('[Monitor] Metagraph is healthy ✓');
+  if (issuesDetected === 0) {
+    log('[Monitor] Metagraph is healthy ✓');
+  } else {
+    log(`[Monitor] Evaluated ${issuesDetected} issue(s) — see above for details`);
+  }
 }
 
 async function main(): Promise<void> {

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0](https://github.com/ottobot-ai/ottochain-watchdog/compare/v1.1.0...v1.2.0) (2026-03-02)
+
+
+### Features
+
+* services node monitoring + node resource checks ([#28](https://github.com/ottobot-ai/ottochain-watchdog/issues/28)) ([564dc8f](https://github.com/ottobot-ai/ottochain-watchdog/commit/564dc8f7d646d2bedfb5b85ea53abddd08a1b328))
+
+
+### Bug Fixes
+
+* production container names + accurate health summary ([#27](https://github.com/ottobot-ai/ottochain-watchdog/issues/27)) ([7237178](https://github.com/ottobot-ai/ottochain-watchdog/commit/7237178e3b17860aba503651f50f4ae0c4f02cc3))
+
 ## [1.1.0](https://github.com/ottobot-ai/ottochain-watchdog/compare/v1.0.0...v1.1.0) (2026-03-01)
 
 

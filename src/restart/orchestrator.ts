@@ -32,8 +32,10 @@ function sleep(ms: number): Promise<void> {
 
 /** Container name for a layer on a given node index */
 function containerName(layer: Layer, nodeIndex: number): string {
-  // Our Docker naming convention: gl0-0, ml0-0, dl1-0, etc.
-  return `${layer}-${nodeIndex}`;
+  // Production: one container per node, named by layer (gl0, ml0, cl1, dl1)
+  // CI: multiple containers per host, indexed (gl0-0, ml0-0, cl1-1, etc.)
+  const useIndexed = process.env.CONTAINER_NAMING === 'indexed';
+  return useIndexed ? `${layer}-${nodeIndex}` : layer;
 }
 
 /**

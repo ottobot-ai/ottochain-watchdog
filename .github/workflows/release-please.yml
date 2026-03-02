@@ -18,7 +18,24 @@ jobs:
         uses: googleapis/release-please-action@v4
         with:
           release-type: simple
-          package-name: "ottochain-monitoring"
+          package-name: "ottochain-watchdog"
+
+      # GITHUB_TOKEN-created tags don't trigger 'on: push: tags' workflows,
+      # so we dispatch to deploy repo directly from here.
+      - name: Notify deploy repo
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.DEPLOY_REPO_TOKEN }}
+        run: |
+          VERSION="${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}"
+          if [ -z "$GH_TOKEN" ]; then
+            echo "⚠️ DEPLOY_REPO_TOKEN not set, skipping deploy notification"
+            exit 0
+          fi
+          gh api repos/ottobot-ai/ottochain-deploy/dispatches \
+            -f event_type=version-bump \
+            -f "client_payload={\"component\":\"watchdog\",\"version\":\"$VERSION\"}"
+          echo "✅ Dispatched version-bump to deploy repo: watchdog $VERSION"
 
       - name: Summary
         if: steps.release.outputs.release_created == 'true'
@@ -26,3 +43,4 @@ jobs:
           echo "## 🎉 Release Created" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version**: ${{ steps.release.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deploy dispatch**: Sent to ottochain-deploy" >> $GITHUB_STEP_SUMMARY

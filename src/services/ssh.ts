@@ -9,6 +9,13 @@ import { readFileSync } from 'fs';
 import type { Config } from '../config.js';
 import { log } from '../logger.js';
 
+/** Shell-escape a string to prevent command injection */
+function shellEscape(s: string): string {
+  // Only allow alphanumeric, dash, underscore, dot, colon, slash
+  if (/^[a-zA-Z0-9._\-/:@]+$/.test(s)) return s;
+  return "'" + s.replace(/'/g, "'\''") + "'";
+}
+
 export async function sshExec(
   ip: string,
   command: string,
@@ -64,7 +71,7 @@ export async function dockerExec(
   command: string,
   config: Config,
 ): Promise<string> {
-  const result = await sshExec(ip, `docker exec ${container} ${command}`, config);
+  const result = await sshExec(ip, `docker exec ${shellEscape(container)} ${command}`, config);
   if (result.code !== 0) {
     throw new Error(`docker exec ${container} on ${ip} failed (code ${result.code}): ${result.stderr}`);
   }
@@ -79,7 +86,7 @@ export async function dockerControl(
   config: Config,
 ): Promise<void> {
   log(`[SSH] docker ${action} ${container} on ${ip}`);
-  const result = await sshExec(ip, `docker ${action} ${container} 2>&1`, config, 60_000);
+  const result = await sshExec(ip, `docker ${shellEscape(action)} ${shellEscape(container)} 2>&1`, config, 60_000);
   if (result.code !== 0) {
     throw new Error(`docker ${action} ${container} on ${ip} failed: ${result.stderr}`);
   }
@@ -93,5 +100,5 @@ export async function killLayerProcess(
 ): Promise<void> {
   log(`[SSH] Killing process in ${container} on ${ip}`);
   // Stop the container (sends SIGTERM, then SIGKILL after grace period)
-  await sshExec(ip, `docker stop -t 15 ${container} 2>&1 || true`, config, 30_000);
+  await sshExec(ip, `docker stop -t 15 ${shellEscape(container)} 2>&1 || true`, config, 30_000);
 }

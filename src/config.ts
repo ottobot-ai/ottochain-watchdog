@@ -22,6 +22,9 @@ export interface Config {
   /** Metagraph nodes (must match cluster size) */
   nodes: NodeConfig[];
 
+  /** Services node (bridge, indexer, explorer, gateway) — optional */
+  servicesNode?: NodeConfig;
+
   /** SSH key path for remote commands */
   sshKeyPath: string;
   sshUser: string;
@@ -96,11 +99,18 @@ export function loadConfig(): Config {
   const nodeIps = (process.env.NODE_IPS ?? '10.0.0.1,10.0.0.2,10.0.0.3').split(',');
   const nodeNames = (process.env.NODE_NAMES ?? 'node1,node2,node3').split(',');
 
+  const servicesIp = process.env.SERVICES_NODE_IP;
+
   return {
     nodes: nodeIps.map((ip, i) => ({
       name: nodeNames[i] ?? `node${i + 1}`,
       ip: ip.trim(),
     })),
+
+    servicesNode: servicesIp ? {
+      name: process.env.SERVICES_NODE_NAME ?? 'services',
+      ip: servicesIp.trim(),
+    } : undefined,
 
     sshKeyPath: process.env.SSH_KEY_PATH ?? '/root/.ssh/hetzner_ottobot',
     sshUser: process.env.SSH_USER ?? 'root',

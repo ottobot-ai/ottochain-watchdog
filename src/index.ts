@@ -21,6 +21,8 @@ import { HealthReader } from './services/health-reader.js';
 import { detectForkedClusterFromSnapshot } from './conditions/forked-cluster.js';
 import { detectSnapshotsStoppedFromSnapshot, StallTracker } from './conditions/snapshots-stopped.js';
 import { detectUnhealthyNodesFromSnapshot } from './conditions/unhealthy-nodes.js';
+import { detectServicesHealth } from './conditions/services-health.js';
+import { detectNodeResourceIssues } from './conditions/node-resources.js';
 import { detectHypergraphHealth } from './conditions/hypergraph-health.js';
 import { executeRestart } from './restart/orchestrator.js';
 import { EventPublisher } from './services/events.js';
@@ -56,6 +58,22 @@ async function runHealthCheck(
     { name: 'SnapshotsStopped', detect: () => detectSnapshotsStoppedFromSnapshot(config, snapshot, stallTracker) },
     { name: 'UnhealthyNodes', detect: () => detectUnhealthyNodesFromSnapshot(config, snapshot) },
   ];
+
+  // Services node monitoring (if configured)
+  if (config.servicesNode) {
+    conditions.push({
+      name: 'ServicesHealth',
+      detect: () => detectServicesHealth(config),
+    });
+  }
+
+  // Resource monitoring across all nodes (every 3rd cycle to reduce SSH load)
+  if (cycleCount === 1 || cycleCount % 3 === 0) {
+    conditions.push({
+      name: 'NodeResources',
+      detect: () => detectNodeResourceIssues(config),
+    });
+  }
 
   // Add hypergraph condition if enabled, respecting check interval multiplier
   if (config.hypergraph?.enabled) {

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0](https://github.com/ottobot-ai/ottochain-watchdog/compare/v1.0.0...v1.1.0) (2026-03-01)
+
+
+### Features
+
+* add optional hypergraph health monitoring ([#16](https://github.com/ottobot-ai/ottochain-watchdog/issues/16)) ([80c58cb](https://github.com/ottobot-ai/ottochain-watchdog/commit/80c58cb526a4989fb9043a9da5f98f2adb8c77ff))
+
 ## [0.2.0] - 2026-02-27
 
 ### Changed

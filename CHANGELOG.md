@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2](https://github.com/ottobot-ai/ottochain-watchdog/compare/v1.2.1...v1.2.2) (2026-03-02)
+
+
+### Bug Fixes
+
+* dispatch version-bump from release-please, not tag push ([#32](https://github.com/ottobot-ai/ottochain-watchdog/issues/32)) ([45897b6](https://github.com/ottobot-ai/ottochain-watchdog/commit/45897b6401b26e49d99ba317410d1fae31fa5eb0))
+
 ## [1.2.1](https://github.com/ottobot-ai/ottochain-watchdog/compare/v1.2.0...v1.2.1) (2026-03-02)
 
 

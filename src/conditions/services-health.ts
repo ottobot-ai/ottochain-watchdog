@@ -23,7 +23,7 @@ const REQUIRED_CONTAINERS = [
 
 /** Optional containers — warn if unhealthy but don't flag as missing */
 const OPTIONAL_CONTAINERS = [
-  'health-monitor',
+  'watchdog',
   'monitor',
   'traffic-gen',
   'prometheus',

@@ -1,6 +1,8 @@
 name: Release
 
 on:
+  repository_dispatch:
+    types: [release-created]
   push:
     tags:
       - 'v*'
@@ -29,13 +31,15 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            VERSION="${{ github.event.client_payload.version }}"
           else
             VERSION="${GITHUB_REF#refs/tags/}"
           fi
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=v$VERSION" >> $GITHUB_OUTPUT
-          echo "Releasing version: v$VERSION"
+          echo "Releasing version: v$VERSION (trigger: ${{ github.event_name }})"
 
       - name: Generate changelog
         id: changelog
@@ -46,21 +50,7 @@ jobs:
             git log --pretty=format:"- %s (%h)" "$PREV_TAG"..HEAD >> changelog.md
           else
             echo "## Initial Release" > changelog.md
-            echo "" >> changelog.md
-            echo "Monitoring stack configuration for OttoChain:" >> changelog.md
-            echo "- Prometheus metrics collection" >> changelog.md
-            echo "- Grafana dashboards" >> changelog.md
-            echo "- Alertmanager routing" >> changelog.md
-            echo "- Loki log aggregation" >> changelog.md
           fi
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: Monitoring ${{ steps.version.outputs.tag }}
-          body_path: changelog.md
-          generate_release_notes: true
 
       - name: Notify deploy repo
         env:
@@ -70,15 +60,20 @@ jobs:
             echo "⚠️ DEPLOY_REPO_TOKEN not set, skipping deploy notification"
             exit 0
           fi
-          gh api repos/ottobot-ai/ottochain-deploy/dispatches \
-            -f event_type=version-bump \
-            -f 'client_payload={"component":"watchdog","version":"${{ steps.version.outputs.version }}"}'
-          echo "✅ Notified deploy repo to bump watchdog to v${{ steps.version.outputs.version }}"
+          gh api repos/ottobot-ai/ottochain-deploy/dispatches --input - <<EOF
+          {
+            "event_type": "version-bump",
+            "client_payload": {
+              "component": "watchdog",
+              "version": "${{ steps.version.outputs.version }}"
+            }
+          }
+          EOF
+          echo "✅ Notified deploy repo: watchdog v${{ steps.version.outputs.version }}"
 
       - name: Summary
         run: |
           echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: ${{ steps.version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Deploy PR**: Auto-created in ottochain-deploy" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deploy dispatch**: Sent to ottochain-deploy" >> $GITHUB_STEP_SUMMARY

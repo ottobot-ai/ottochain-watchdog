@@ -19,34 +19,21 @@ jobs:
         with:
           release-type: simple
 
-      # GITHUB_TOKEN-created tags don't trigger 'on: push: tags' workflows,
-      # so we dispatch to deploy repo directly from here.
-      - name: Notify deploy repo
+      # GITHUB_TOKEN tags don't trigger 'on: push: tags' workflows,
+      # but repository_dispatch IS triggered by GITHUB_TOKEN.
+      - name: Trigger release workflow
         if: steps.release.outputs.release_created == 'true'
         env:
-          GH_TOKEN: ${{ secrets.DEPLOY_REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}"
-          if [ -z "$GH_TOKEN" ]; then
-            echo "⚠️ DEPLOY_REPO_TOKEN not set, skipping deploy notification"
-            exit 0
-          fi
-          # Must use --input (not -f) so client_payload is a JSON object, not a string
-          gh api repos/ottobot-ai/ottochain-deploy/dispatches --input - <<EOF
+          gh api repos/${{ github.repository }}/dispatches --input - <<EOF
           {
-            "event_type": "version-bump",
+            "event_type": "release-created",
             "client_payload": {
-              "component": "watchdog",
-              "version": "$VERSION"
+              "version": "$VERSION",
+              "tag": "v$VERSION"
             }
           }
           EOF
-          echo "✅ Dispatched version-bump to deploy repo: watchdog $VERSION"
-
-      - name: Summary
-        if: steps.release.outputs.release_created == 'true'
-        run: |
-          echo "## 🎉 Release Created" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version**: ${{ steps.release.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Deploy dispatch**: Sent to ottochain-deploy" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Dispatched release-created v$VERSION"

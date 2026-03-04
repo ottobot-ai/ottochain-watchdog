@@ -24,7 +24,7 @@ import { detectUnhealthyNodesFromSnapshot } from './conditions/unhealthy-nodes.j
 import { detectServicesHealth } from './conditions/services-health.js';
 import { detectNodeResourceIssues } from './conditions/node-resources.js';
 import { detectHypergraphHealth } from './conditions/hypergraph-health.js';
-import { executeRestart } from './restart/orchestrator.js';
+import { executeRestart, isRestartSuspended, resetRestartState } from './restart/orchestrator.js';
 import { EventPublisher } from './services/events.js';
 import { log } from './logger.js';
 import type { DetectionResult, HealthSnapshot } from './types.js';
@@ -122,6 +122,11 @@ async function runHealthCheck(
   }
 
   if (issuesDetected === 0) {
+    // If we were in given-up state but health recovered, reset
+    if (isRestartSuspended()) {
+      resetRestartState();
+      log('[Monitor] Health recovered — automatic restarts re-enabled');
+    }
     log('[Monitor] Metagraph is healthy ✓');
   } else {
     log(`[Monitor] Evaluated ${issuesDetected} issue(s) — see above for details`);
@@ -137,6 +142,8 @@ async function main(): Promise<void> {
   log(`Nodes: ${config.nodes.map(n => `${n.name}(${n.ip})`).join(', ')}`);
   log(`Mode: ${config.daemon ? 'daemon' : 'single check'}`);
   log(`Interval: ${config.healthCheckIntervalSeconds}s`);
+  log(`Managed layers: ${config.managedLayers.join(', ')}`);
+  log(`Max consecutive failures: ${config.maxConsecutiveFailures}`);
   log(`Health data stale threshold: ${config.healthDataStaleSeconds}s`);
   if (config.hypergraph?.enabled) {
     log(`Hypergraph monitoring: enabled (L0: ${config.hypergraph.l0Urls.join(', ')}, multiplier: ${config.hypergraph.checkIntervalMultiplier}x)`);

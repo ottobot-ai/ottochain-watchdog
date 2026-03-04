@@ -2,11 +2,16 @@
  * Restart Orchestrator
  *
  * Executes the appropriate restart strategy based on the detection result:
- * - individual-node: kill + rejoin a single node to a healthy reference
- * - full-layer: kill all nodes in layer, restart with genesis + join
- * - full-metagraph: kill everything, pick rollback node, restart ML0→L1s
+ * - individual-node: kill + restart (run-rollback) + rejoin a single node
+ * - full-layer: kill all nodes in layer, restart first node + join others
+ * - full-metagraph: kill ML0+L1s, restart ML0 → then L1s
  *
- * Tracks restart history to prevent restart loops.
+ * IMPORTANT: The watchdog NEVER performs genesis. Genesis is only done by
+ * the deploy workflow (GitHub Actions). The watchdog restarts containers
+ * using `docker start` which runs the entrypoint in run-rollback mode,
+ * allowing nodes to recover from their last known state.
+ *
+ * Tracks restart history and consecutive failures to prevent restart loops.
  *
  * NOTE: Alerting is handled by Prometheus/Alertmanager. This module only
  * performs restarts and logs events to Postgres.
@@ -14,28 +19,37 @@
 
 import type { Config } from '../config.js';
 import type { DetectionResult, Layer, RestartEvent } from '../types.js';
+import { DEFAULT_MANAGED_LAYERS } from '../types.js';
 import { killLayerProcess, dockerControl, sshExec } from '../services/ssh.js';
 import { getNodeInfo } from '../services/node-api.js';
 import { log } from '../logger.js';
+import { sleep } from '../utils/sleep.js';
 
 // In-memory restart history
 const restartHistory: RestartEvent[] = [];
+
+// Consecutive failure counter — resets on success
+let consecutiveFailures = 0;
+
+// Whether we've given up (hit max failures)
+let givenUp = false;
 
 function recentRestartCount(minutes: number): number {
   const cutoff = Date.now() - minutes * 60_000;
   return restartHistory.filter(r => new Date(r.timestamp).getTime() > cutoff).length;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 /** Container name for a layer on a given node index */
 function containerName(layer: Layer, nodeIndex: number): string {
-  // Production: one container per node, named by layer (gl0, ml0, cl1, dl1)
-  // CI: multiple containers per host, indexed (gl0-0, ml0-0, cl1-1, etc.)
   const useIndexed = process.env.CONTAINER_NAMING === 'indexed';
   return useIndexed ? `${layer}-${nodeIndex}` : layer;
+}
+
+/**
+ * Check if a layer is managed (watchdog is allowed to restart it).
+ */
+function isManaged(layer: Layer, config: Config): boolean {
+  return config.managedLayers.includes(layer);
 }
 
 /**
@@ -60,8 +74,8 @@ async function waitForReady(
  */
 async function joinCluster(
   nodeIp: string,
-  genesisId: string,
-  genesisIp: string,
+  referenceId: string,
+  referenceIp: string,
   layer: Layer,
   config: Config,
 ): Promise<void> {
@@ -69,11 +83,11 @@ async function joinCluster(
   const p2pPort = config.p2pPorts[layer];
   const container = containerName(layer, config.nodes.findIndex(n => n.ip === nodeIp));
 
-  log(`[Restart] Joining ${nodeIp} ${layer} to cluster (genesis=${genesisIp})`);
+  log(`[Restart] Joining ${nodeIp} ${layer} to cluster (reference=${referenceIp})`);
   await sshExec(nodeIp, [
     `docker exec ${container} curl -sf -X POST http://127.0.0.1:${cliPort}/cluster/join`,
     `-H 'Content-Type: application/json'`,
-    `-d '{"id":"${genesisId}","ip":"${genesisIp}","p2pPort":${p2pPort}}'`,
+    `-d '{"id":"${referenceId}","ip":"${referenceIp}","p2pPort":${p2pPort}}'`,
   ].join(' '), config);
 }
 
@@ -82,14 +96,20 @@ async function joinCluster(
 // ============================================================================
 
 /**
- * Restart individual unhealthy nodes by killing + rejoining.
+ * Restart individual unhealthy nodes by killing + restarting + rejoining.
+ * Uses run-rollback (docker start), NOT genesis.
  */
 async function restartIndividualNodes(
   config: Config,
   result: DetectionResult,
 ): Promise<void> {
   const affectedNodes = result.affectedNodes ?? [];
-  const layers = result.affectedLayers ?? [];
+  const layers = (result.affectedLayers ?? []).filter(l => isManaged(l, config));
+
+  if (layers.length === 0) {
+    log(`[Restart] No managed layers in affected set — skipping`);
+    return;
+  }
 
   for (const layer of layers) {
     // Find a healthy reference node
@@ -112,11 +132,20 @@ async function restartIndividualNodes(
       const nodeIdx = config.nodes.findIndex(n => n.ip === nodeIp);
       const container = containerName(layer, nodeIdx);
 
-      log(`[Restart] Restarting ${container} on ${nodeIp}`);
+      log(`[Restart] Restarting ${container} on ${nodeIp} (run-rollback)`);
       await killLayerProcess(nodeIp, container, config);
       await sleep(3_000);
       await dockerControl(nodeIp, 'start', container, config);
-      await sleep(10_000);
+      await sleep(15_000);
+
+      // Check if it came up on its own (run-rollback may auto-join)
+      const info = await getNodeInfo(nodeIp, port);
+      if (info?.state === 'Ready') {
+        log(`[Restart] ${container} on ${nodeIp} recovered to Ready`);
+        continue;
+      }
+
+      // Try explicit join
       await joinCluster(nodeIp, refInfo.id, healthyNode.ip, layer, config);
       await waitForReady(nodeIp, port, 90_000);
     }
@@ -124,13 +153,19 @@ async function restartIndividualNodes(
 }
 
 /**
- * Restart an entire layer: kill all → start genesis → join validators.
+ * Restart an entire layer: kill all → start first node (run-rollback) → join others.
+ * Does NOT perform genesis — relies on existing state.
  */
 async function restartFullLayer(
   config: Config,
   layer: Layer,
 ): Promise<void> {
-  log(`[Restart] Full ${layer.toUpperCase()} layer restart`);
+  if (!isManaged(layer, config)) {
+    log(`[Restart] ${layer.toUpperCase()} is not a managed layer — skipping`);
+    return;
+  }
+
+  log(`[Restart] Full ${layer.toUpperCase()} layer restart (run-rollback)`);
 
   const port = config.ports[layer];
 
@@ -143,29 +178,38 @@ async function restartFullLayer(
 
   // Kill all nodes for this layer
   await Promise.all(config.nodes.map((n, i) =>
-    killLayerProcess(n.ip, containerName(layer, i), config)
+    killLayerProcess(n.ip, containerName(layer, i), config).catch(() => {})
   ));
   await sleep(5_000);
 
-  // Start genesis node (index 0)
-  const genesis = config.nodes[0];
-  const genesisContainer = containerName(layer, 0);
-  await dockerControl(genesis.ip, 'start', genesisContainer, config);
+  // Start first node via run-rollback (docker start)
+  const first = config.nodes[0];
+  const firstContainer = containerName(layer, 0);
+  log(`[Restart] Starting ${firstContainer} on ${first.ip} (run-rollback)`);
+  await dockerControl(first.ip, 'start', firstContainer, config);
 
-  if (!await waitForReady(genesis.ip, port)) {
-    throw new Error(`${layer} genesis on ${genesis.ip} did not become Ready`);
+  if (!await waitForReady(first.ip, port, 180_000)) {
+    throw new Error(`${layer} on ${first.ip} did not become Ready after run-rollback`);
   }
 
-  const genesisInfo = await getNodeInfo(genesis.ip, port);
-  if (!genesisInfo) throw new Error(`Cannot get genesis info for ${layer}`);
+  const firstInfo = await getNodeInfo(first.ip, port);
+  if (!firstInfo) throw new Error(`Cannot get node info for ${layer} on ${first.ip}`);
 
-  // Start and join validators
+  // Start and join remaining nodes
   for (let i = 1; i < config.nodes.length; i++) {
     const node = config.nodes[i];
     const container = containerName(layer, i);
     await dockerControl(node.ip, 'start', container, config);
-    await sleep(10_000);
-    await joinCluster(node.ip, genesisInfo.id, genesis.ip, layer, config);
+    await sleep(15_000);
+
+    // Check if auto-joined
+    const info = await getNodeInfo(node.ip, port);
+    if (info?.state === 'Ready') {
+      log(`[Restart] ${container} on ${node.ip} auto-recovered to Ready`);
+      continue;
+    }
+
+    await joinCluster(node.ip, firstInfo.id, first.ip, layer, config);
   }
 
   // Wait for all to be Ready
@@ -177,52 +221,67 @@ async function restartFullLayer(
 }
 
 /**
- * Full metagraph restart: kill everything → start ML0 → start L1s.
+ * Full metagraph restart: kill managed layers → start ML0 → start L1s.
  *
- * Picks the "rollback node" — the node most likely to have the latest state.
- * For now, uses node 0 (genesis). A future improvement could check which node
- * has the highest ordinal.
+ * Uses run-rollback (docker start) — NOT genesis.
+ * The first node to start will recover from its last snapshot and
+ * other nodes join it.
  */
 async function restartFullMetagraph(config: Config): Promise<void> {
-  log('[Restart] === Full Metagraph Restart ===');
+  log('[Restart] === Full Metagraph Restart (run-rollback) ===');
 
-  const layers: Layer[] = ['dl1', 'cl1', 'ml0'];
+  // Only restart managed layers, in reverse dependency order
+  const managedReverse = [...config.managedLayers].reverse();
 
-  // Kill all layers in reverse dependency order
-  for (const layer of layers) {
+  // Kill managed layers in reverse dependency order
+  for (const layer of managedReverse) {
     await Promise.all(config.nodes.map((n, i) =>
       killLayerProcess(n.ip, containerName(layer, i), config).catch(() => {})
     ));
   }
   await sleep(5_000);
 
-  // Start ML0 (genesis first, then validators)
-  log('[Restart] Starting ML0...');
-  await dockerControl(config.nodes[0].ip, 'start', containerName('ml0', 0), config);
-  if (!await waitForReady(config.nodes[0].ip, config.ports.ml0)) {
-    throw new Error('ML0 genesis did not become Ready');
+  // Start ML0 if managed
+  if (config.managedLayers.includes('ml0')) {
+    log('[Restart] Starting ML0 (run-rollback)...');
+    await dockerControl(config.nodes[0].ip, 'start', containerName('ml0', 0), config);
+
+    if (!await waitForReady(config.nodes[0].ip, config.ports.ml0, 180_000)) {
+      throw new Error('ML0 did not become Ready after run-rollback');
+    }
+
+    const ml0Info = await getNodeInfo(config.nodes[0].ip, config.ports.ml0);
+    if (!ml0Info) throw new Error('Cannot get ML0 info after restart');
+
+    for (let i = 1; i < config.nodes.length; i++) {
+      await dockerControl(config.nodes[i].ip, 'start', containerName('ml0', i), config);
+      await sleep(15_000);
+
+      const info = await getNodeInfo(config.nodes[i].ip, config.ports.ml0);
+      if (info?.state === 'Ready') {
+        log(`[Restart] ML0 on ${config.nodes[i].ip} auto-recovered`);
+        continue;
+      }
+
+      await joinCluster(config.nodes[i].ip, ml0Info.id, config.nodes[0].ip, 'ml0', config);
+    }
+
+    // Verify ML0 cluster
+    for (const node of config.nodes) {
+      await waitForReady(node.ip, config.ports.ml0, 120_000);
+    }
+    log('[Restart] ML0 cluster ready');
   }
 
-  const ml0Info = await getNodeInfo(config.nodes[0].ip, config.ports.ml0);
-  if (!ml0Info) throw new Error('Cannot get ML0 genesis info');
-
-  for (let i = 1; i < config.nodes.length; i++) {
-    await dockerControl(config.nodes[i].ip, 'start', containerName('ml0', i), config);
-    await sleep(10_000);
-    await joinCluster(config.nodes[i].ip, ml0Info.id, config.nodes[0].ip, 'ml0', config);
+  // Start remaining managed L1 layers
+  const l1Layers = config.managedLayers.filter(l => l !== 'ml0' && l !== 'gl0');
+  if (l1Layers.length > 0) {
+    await Promise.all(l1Layers.map(layer =>
+      restartFullLayer(config, layer).catch(err => {
+        log(`[Restart] ${layer} restart failed: ${err}`);
+      })
+    ));
   }
-
-  // Wait for ML0 cluster
-  for (const node of config.nodes) {
-    await waitForReady(node.ip, config.ports.ml0, 120_000);
-  }
-  log('[Restart] ML0 cluster ready');
-
-  // Start CL1 and DL1 in parallel
-  const l1Layers: Layer[] = ['cl1', 'dl1'];
-  await Promise.all(l1Layers.map(layer => restartFullLayer(config, layer).catch(err => {
-    log(`[Restart] ${layer} restart failed: ${err}`);
-  })));
 
   log('[Restart] === Full Metagraph Restart Complete ===');
 }
@@ -241,12 +300,18 @@ export async function executeRestart(
 ): Promise<boolean> {
   if (!result.detected || result.restartScope === 'none') return false;
 
+  // If we've given up after max consecutive failures, don't try again
+  // until the condition clears (nodes recover on their own or manual intervention)
+  if (givenUp) {
+    log(`[Restart] Restart suspended after ${config.maxConsecutiveFailures} consecutive failures. Manual intervention required.`);
+    return false;
+  }
+
   // Rate limit
   const recentCount = recentRestartCount(60);
   if (recentCount >= config.maxRestartsPerHour) {
     const msg = `Restart loop detected (${recentCount} restarts in 1h). Manual intervention required.`;
     log(`[Restart] ${msg}`);
-    // NOTE: Alertmanager handles alerting via Prometheus metrics
     return false;
   }
 
@@ -260,13 +325,20 @@ export async function executeRestart(
     }
   }
 
+  // Filter affected layers to only managed ones
+  const managedAffected = (result.affectedLayers ?? []).filter(l => isManaged(l, config));
+  if (managedAffected.length === 0 && result.restartScope !== 'full-metagraph') {
+    log(`[Restart] No managed layers affected (affected: ${result.affectedLayers?.join(', ')}, managed: ${config.managedLayers.join(', ')})`);
+    return false;
+  }
+
   log(`[Restart] Initiating ${result.restartScope} restart for ${result.condition}: ${result.details}`);
 
   const event: RestartEvent = {
     timestamp: new Date().toISOString(),
     scope: result.restartScope,
     condition: result.condition,
-    layers: result.affectedLayers ?? [],
+    layers: managedAffected,
     nodes: result.affectedNodes ?? [],
     success: false,
   };
@@ -274,10 +346,10 @@ export async function executeRestart(
   try {
     switch (result.restartScope) {
       case 'individual-node':
-        await restartIndividualNodes(config, result);
+        await restartIndividualNodes(config, { ...result, affectedLayers: managedAffected });
         break;
       case 'full-layer':
-        for (const layer of result.affectedLayers ?? []) {
+        for (const layer of managedAffected) {
           await restartFullLayer(config, layer);
         }
         break;
@@ -287,14 +359,45 @@ export async function executeRestart(
     }
 
     event.success = true;
+    consecutiveFailures = 0;
+    givenUp = false;
     log(`[Restart] Restart complete (${result.restartScope})`);
   } catch (err) {
     event.error = err instanceof Error ? err.message : String(err);
-    log(`[Restart] Failed: ${event.error}`);
+    consecutiveFailures++;
+    log(`[Restart] Failed (${consecutiveFailures}/${config.maxConsecutiveFailures}): ${event.error}`);
+
+    if (consecutiveFailures >= config.maxConsecutiveFailures) {
+      givenUp = true;
+      log(`[Restart] ⛔ Max consecutive failures (${config.maxConsecutiveFailures}) reached. Suspending automatic restarts. Manual intervention required.`);
+    }
   }
 
   restartHistory.push(event);
   return event.success;
+}
+
+/**
+ * Reset the given-up state (e.g., when a manual restart succeeds or health recovers).
+ */
+export function resetRestartState(): void {
+  consecutiveFailures = 0;
+  givenUp = false;
+  log('[Restart] Restart state reset — automatic restarts re-enabled');
+}
+
+/**
+ * Check if automatic restarts are suspended.
+ */
+export function isRestartSuspended(): boolean {
+  return givenUp;
+}
+
+/**
+ * Get consecutive failure count.
+ */
+export function getConsecutiveFailures(): number {
+  return consecutiveFailures;
 }
 
 /**

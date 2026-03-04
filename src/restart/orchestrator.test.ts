@@ -7,15 +7,15 @@ import type { Layer } from '../types.js';
 import { DEFAULT_MANAGED_LAYERS } from '../types.js';
 
 describe('Restart Orchestrator — Config', () => {
-  it('DEFAULT_MANAGED_LAYERS excludes cl1', () => {
+  it('DEFAULT_MANAGED_LAYERS includes gl0, ml0, dl1 but not cl1', () => {
+    expect(DEFAULT_MANAGED_LAYERS).toContain('gl0');
     expect(DEFAULT_MANAGED_LAYERS).toContain('ml0');
     expect(DEFAULT_MANAGED_LAYERS).toContain('dl1');
     expect(DEFAULT_MANAGED_LAYERS).not.toContain('cl1');
-    expect(DEFAULT_MANAGED_LAYERS).not.toContain('gl0');
   });
 
-  it('DEFAULT_MANAGED_LAYERS has exactly 2 layers', () => {
-    expect(DEFAULT_MANAGED_LAYERS).toHaveLength(2);
+  it('DEFAULT_MANAGED_LAYERS has exactly 3 layers', () => {
+    expect(DEFAULT_MANAGED_LAYERS).toHaveLength(3);
   });
 });
 

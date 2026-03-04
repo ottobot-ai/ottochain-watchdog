@@ -35,7 +35,7 @@ const baseConfig = {
   healthDataStaleSeconds: 60,
   daemon: false,
   once: false,
-    managedLayers: ['ml0', 'dl1'],
+    managedLayers: ['gl0', 'ml0', 'dl1'],
     maxConsecutiveFailures: 3,
 } as any;
 

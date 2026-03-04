@@ -9,7 +9,7 @@ export const METAGRAPH_LAYERS: Layer[] = ['ml0', 'cl1', 'dl1'];
  * Configurable via MANAGED_LAYERS env var (comma-separated).
  * CL1 excluded by default since it's not deployed in minimal config.
  */
-export const DEFAULT_MANAGED_LAYERS: Layer[] = ['ml0', 'dl1'];
+export const DEFAULT_MANAGED_LAYERS: Layer[] = ['gl0', 'ml0', 'dl1'];
 
 /** Node info from /node/info */
 export interface NodeInfo {

@@ -43,6 +43,8 @@ function makeConfig(nodeCount: number = 3): Config {
     healthDataStaleSeconds: 60,
     daemon: false,
     once: false,
+    managedLayers: ['gl0', 'ml0', 'dl1'],
+    maxConsecutiveFailures: 3,
   };
 }
 

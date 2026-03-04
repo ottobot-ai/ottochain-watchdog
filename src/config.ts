@@ -4,6 +4,9 @@
  * All values can be overridden via environment variables.
  */
 
+import type { Layer } from './types.js';
+import { DEFAULT_MANAGED_LAYERS } from './types.js';
+
 export interface NodeConfig {
   /** Human-friendly label */
   name: string;
@@ -67,6 +70,12 @@ export interface Config {
 
   /** Seconds before health data is considered stale (triggers direct fallback) */
   healthDataStaleSeconds: number;
+
+  /** Layers the watchdog manages (can restart). Others are detection-only. */
+  managedLayers: Layer[];
+
+  /** Max consecutive restart failures before giving up and alerting */
+  maxConsecutiveFailures: number;
 
   /** Run mode */
   daemon: boolean;
@@ -145,6 +154,9 @@ export function loadConfig(): Config {
     postgresUrl: process.env.DATABASE_URL ?? 'postgresql://ottochain:ottochain-local-dev@localhost:5432/ottochain',
     healthDataStaleSeconds: int(process.env.HEALTH_DATA_STALE_SECONDS, 60),
 
+    managedLayers: parseManagedLayers(process.env.MANAGED_LAYERS),
+    maxConsecutiveFailures: int(process.env.MAX_CONSECUTIVE_FAILURES, 3),
+
     daemon: process.argv.includes('--daemon'),
     once: process.argv.includes('--once'),
 
@@ -154,4 +166,10 @@ export function loadConfig(): Config {
 
 function int(val: string | undefined, fallback: number): number {
   return val ? parseInt(val, 10) : fallback;
+}
+
+function parseManagedLayers(val: string | undefined): Layer[] {
+  if (!val) return DEFAULT_MANAGED_LAYERS;
+  const valid: Layer[] = ['gl0', 'ml0', 'cl1', 'dl1'];
+  return val.split(',').map(s => s.trim() as Layer).filter(l => valid.includes(l));
 }

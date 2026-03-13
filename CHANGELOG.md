@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.6](https://github.com/ottobot-ai/ottochain-watchdog/compare/v1.2.5...v1.2.6) (2026-03-13)
+
+
+### Bug Fixes
+
+* **docker:** migrate Dockerfile from npm to pnpm ([#49](https://github.com/ottobot-ai/ottochain-watchdog/issues/49)) ([6c3a093](https://github.com/ottobot-ai/ottochain-watchdog/commit/6c3a093729892baf23b0461346a5116dc11a5f6c))
+
 ## [1.2.5](https://github.com/ottobot-ai/ottochain-watchdog/compare/v1.2.4...v1.2.5) (2026-03-04)
 
 

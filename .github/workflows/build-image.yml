@@ -6,7 +6,8 @@ on:
       - main
     paths:
       - 'src/**'
-      - 'package*.json'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
       - 'tsconfig.json'
       - 'Dockerfile'
       - '.github/workflows/build-image.yml'

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0](https://github.com/ottobot-ai/ottochain-watchdog/compare/v1.2.6...v1.3.0) (2026-03-18)
+
+
+### Features
+
+* add Telegram notifications and HTTP API ([#54](https://github.com/ottobot-ai/ottochain-watchdog/issues/54)) ([9373ba2](https://github.com/ottobot-ai/ottochain-watchdog/commit/9373ba2379d38ae5d279e3320b608d106ac46a6d))
+
 ## [1.2.6](https://github.com/ottobot-ai/ottochain-watchdog/compare/v1.2.5...v1.2.6) (2026-03-13)
 
 

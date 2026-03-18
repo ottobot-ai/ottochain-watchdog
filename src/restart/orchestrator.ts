@@ -401,6 +401,24 @@ export function getConsecutiveFailures(): number {
 }
 
 /**
+ * Get restart state summary (for API/notifications).
+ */
+export function getRestartState(): {
+  consecutiveFailures: number;
+  suspended: boolean;
+  lastRestartTime: Date | null;
+  lastCondition: string | null;
+} {
+  const lastRestart = restartHistory.length > 0 ? restartHistory[restartHistory.length - 1] : null;
+  return {
+    consecutiveFailures,
+    suspended: givenUp,
+    lastRestartTime: lastRestart ? new Date(lastRestart.timestamp) : null,
+    lastCondition: lastRestart?.condition ?? null,
+  };
+}
+
+/**
  * Get recent restart history (for status page / debugging).
  */
 export function getRestartHistory(): RestartEvent[] {

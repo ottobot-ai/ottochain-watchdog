@@ -24,8 +24,10 @@ import { detectUnhealthyNodesFromSnapshot } from './conditions/unhealthy-nodes.j
 import { detectServicesHealth } from './conditions/services-health.js';
 import { detectNodeResourceIssues } from './conditions/node-resources.js';
 import { detectHypergraphHealth } from './conditions/hypergraph-health.js';
-import { executeRestart, isRestartSuspended, resetRestartState } from './restart/orchestrator.js';
+import { executeRestart, isRestartSuspended, resetRestartState, getRestartState } from './restart/orchestrator.js';
 import { EventPublisher } from './services/events.js';
+import { NotificationService } from './notifications.js';
+import { startApiServer } from './api.js';
 import { log } from './logger.js';
 import type { DetectionResult, HealthSnapshot } from './types.js';
 
@@ -39,6 +41,7 @@ async function runHealthCheck(
   config: Config,
   healthReader: HealthReader,
   eventPublisher: EventPublisher,
+  notificationService: NotificationService,
 ): Promise<void> {
   log('==================== HEALTH CHECK ====================');
   cycleCount++;
@@ -98,6 +101,9 @@ async function runHealthCheck(
         issuesDetected++;
         log(`[Monitor] Condition detected: ${condition.name} — ${result.details}`);
 
+        // Notify on detection
+        await notificationService.notifyIssueDetected(result);
+
         if (result.restartScope === 'none') {
           // Detection-only conditions (e.g., hypergraph) — log but don't restart
           log(`[Monitor] ${condition.name}: detection only (restartScope: none), no action taken`);
@@ -109,6 +115,18 @@ async function runHealthCheck(
 
         // Publish restart event to Postgres
         await eventPublisher.publishRestart(result, result.restartScope, restarted);
+
+        // Notify on restart result
+        await notificationService.notifyRestartComplete(result, result.restartScope, restarted);
+
+        // Check if we're now suspended
+        if (isRestartSuspended()) {
+          const state = getRestartState();
+          await notificationService.notifyRestartsSuspended(
+            state.consecutiveFailures,
+            state.lastCondition ?? condition.name,
+          );
+        }
 
         if (restarted) {
           log('[Monitor] Restart performed, skipping remaining checks');
@@ -126,6 +144,7 @@ async function runHealthCheck(
     if (isRestartSuspended()) {
       resetRestartState();
       log('[Monitor] Health recovered — automatic restarts re-enabled');
+      await notificationService.notifyRestartsResumed();
     }
     log('[Monitor] Metagraph is healthy ✓');
   } else {
@@ -137,6 +156,10 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const healthReader = new HealthReader(config);
   const eventPublisher = new EventPublisher(config);
+  const notificationService = new NotificationService({ telegram: config.telegram });
+
+  // Start HTTP API if enabled
+  const apiServer = config.api ? startApiServer(config, config.api) : null;
 
   log('OttoChain Watchdog starting');
   log(`Nodes: ${config.nodes.map(n => `${n.name}(${n.ip})`).join(', ')}`);
@@ -151,12 +174,15 @@ async function main(): Promise<void> {
 
   // Publish lifecycle event
   await eventPublisher.publishLifecycle(true);
+  await notificationService.notifyLifecycle(true);
 
   if (config.daemon) {
     // Handle graceful shutdown
     const shutdown = async () => {
       log('[Watchdog] Shutting down...');
+      await notificationService.notifyLifecycle(false);
       await eventPublisher.publishLifecycle(false);
+      if (apiServer) apiServer.close();
       await healthReader.close();
       await eventPublisher.close();
       process.exit(0);
@@ -167,14 +193,15 @@ async function main(): Promise<void> {
     // eslint-disable-next-line no-constant-condition
     while (true) {
       try {
-        await runHealthCheck(config, healthReader, eventPublisher);
+        await runHealthCheck(config, healthReader, eventPublisher, notificationService);
       } catch (err) {
         log(`[Watchdog] Unexpected error: ${err}`);
       }
       await new Promise(resolve => setTimeout(resolve, config.healthCheckIntervalSeconds * 1000));
     }
   } else {
-    await runHealthCheck(config, healthReader, eventPublisher);
+    await runHealthCheck(config, healthReader, eventPublisher, notificationService);
+    if (apiServer) apiServer.close();
     await healthReader.close();
     await eventPublisher.close();
   }

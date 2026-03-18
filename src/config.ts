@@ -21,6 +21,17 @@ export interface HypergraphConfig {
   checkIntervalMultiplier: number;
 }
 
+export interface TelegramConfig {
+  enabled: boolean;
+  botToken: string;
+  chatId: string;
+}
+
+export interface ApiConfig {
+  enabled: boolean;
+  port: number;
+}
+
 export interface Config {
   /** Metagraph nodes (must match cluster size) */
   nodes: NodeConfig[];
@@ -83,6 +94,12 @@ export interface Config {
 
   /** Optional hypergraph monitoring */
   hypergraph?: HypergraphConfig;
+
+  /** Optional Telegram notifications */
+  telegram?: TelegramConfig;
+
+  /** Optional HTTP API */
+  api?: ApiConfig;
 }
 
 function buildHypergraphConfig(): HypergraphConfig | undefined {
@@ -161,7 +178,27 @@ export function loadConfig(): Config {
     once: process.argv.includes('--once'),
 
     hypergraph: buildHypergraphConfig(),
+
+    telegram: buildTelegramConfig(),
+    api: buildApiConfig(),
   };
+}
+
+function buildTelegramConfig(): TelegramConfig | undefined {
+  const enabled = process.env.TELEGRAM_ENABLED === 'true';
+  const botToken = process.env.TELEGRAM_BOT_TOKEN ?? '';
+  const chatId = process.env.TELEGRAM_CHAT_ID ?? '';
+
+  if (!enabled || !botToken || !chatId) return undefined;
+
+  return { enabled: true, botToken, chatId };
+}
+
+function buildApiConfig(): ApiConfig | undefined {
+  const enabled = process.env.API_ENABLED !== 'false'; // Enabled by default
+  const port = int(process.env.API_PORT, 3033);
+
+  return { enabled, port };
 }
 
 function int(val: string | undefined, fallback: number): number {

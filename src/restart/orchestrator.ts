@@ -293,14 +293,14 @@ async function restartFullMetagraph(config: Config): Promise<void> {
 export async function executeRestart(
   config: Config,
   result: DetectionResult,
-): Promise<boolean> {
-  if (!result.detected || result.restartScope === 'none') return false;
+): Promise<{ success: boolean; error?: string }> {
+  if (!result.detected || result.restartScope === 'none') return { success: false };
 
   // If we've given up after max consecutive failures, don't try again
   // until the condition clears (nodes recover on their own or manual intervention)
   if (givenUp) {
     log(`[Restart] Restart suspended after ${config.maxConsecutiveFailures} consecutive failures. Manual intervention required.`);
-    return false;
+    return { success: false };
   }
 
   // Rate limit
@@ -308,7 +308,7 @@ export async function executeRestart(
   if (recentCount >= config.maxRestartsPerHour) {
     const msg = `Restart loop detected (${recentCount} restarts in 1h). Manual intervention required.`;
     log(`[Restart] ${msg}`);
-    return false;
+    return { success: false };
   }
 
   // Cooldown check
@@ -317,7 +317,7 @@ export async function executeRestart(
     const sinceLastMs = Date.now() - new Date(lastRestart.timestamp).getTime();
     if (sinceLastMs < config.restartCooldownMinutes * 60_000) {
       log(`[Restart] Cooldown active (${(sinceLastMs / 60_000).toFixed(1)}m since last restart)`);
-      return false;
+      return { success: false };
     }
   }
 
@@ -325,7 +325,7 @@ export async function executeRestart(
   const managedAffected = (result.affectedLayers ?? []).filter(l => isManaged(l, config));
   if (managedAffected.length === 0 && result.restartScope !== 'full-metagraph') {
     log(`[Restart] No managed layers affected (affected: ${result.affectedLayers?.join(', ')}, managed: ${config.managedLayers.join(', ')})`);
-    return false;
+    return { success: false };
   }
 
   // Dependency-aware layer restart logic:
@@ -389,7 +389,7 @@ export async function executeRestart(
   }
 
   restartHistory.push(event);
-  return event.success;
+  return { success: event.success, error: event.error };
 }
 
 /**

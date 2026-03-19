@@ -263,6 +263,9 @@ for fork in "${forks[@]}"; do
   
   if [[ "$DRY_RUN" == "true" ]]; then
     log "[DRY-RUN] Would recover $layer: genesis=$genesis_ip minority=$minority_nodes"
+  elif [[ "${CONFIRM:-false}" == "true" ]]; then
+    log "Auto-confirming recovery (CONFIRM=true): $layer genesis=$genesis_ip minority=$minority_nodes"
+    recover_layer "$layer" "$genesis_ip" $minority_nodes
   else
     read -p "Recover $layer (1 minority node)? [y/N] " confirm
     if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then

@@ -109,7 +109,7 @@ describe('detectUnhealthyNodesFromSnapshot()', () => {
 
     const result = detectUnhealthyNodesFromSnapshot(config, snapshot);
     expect(result.detected).toBe(true);
-    expect(result.restartScope).toBe('individual-node');
+    expect(result.restartScope).toBe('full-layer');
     expect(result.affectedNodes).toContain('10.0.0.3');
     expect(result.affectedLayers).toContain('ml0');
   });
@@ -287,7 +287,7 @@ describe('detectUnhealthyNodesFromSnapshot()', () => {
 
     const result = detectUnhealthyNodesFromSnapshot(config, snapshot);
     expect(result.detected).toBe(true);
-    expect(result.restartScope).toBe('individual-node');
+    expect(result.restartScope).toBe('full-layer');
     expect(result.affectedNodes).toContain('10.0.0.1');
     expect(result.affectedNodes).toContain('10.0.0.3');
     expect(result.affectedLayers).toContain('ml0');

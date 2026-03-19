@@ -172,7 +172,7 @@ export function loadConfig(): Config {
     healthDataStaleSeconds: int(process.env.HEALTH_DATA_STALE_SECONDS, 60),
 
     managedLayers: parseManagedLayers(process.env.MANAGED_LAYERS),
-    maxConsecutiveFailures: int(process.env.MAX_CONSECUTIVE_FAILURES, 3),
+    maxConsecutiveFailures: int(process.env.MAX_CONSECUTIVE_FAILURES, 5),
 
     daemon: process.argv.includes('--daemon'),
     once: process.argv.includes('--once'),

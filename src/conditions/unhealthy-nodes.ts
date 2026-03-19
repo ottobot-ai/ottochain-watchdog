@@ -96,7 +96,9 @@ export function detectUnhealthyNodesFromSnapshot(
     }
   }
 
-  // Individual unhealthy nodes
+  // Any unhealthy nodes in a layer → restart the whole layer.
+  // Partial restarts don't reliably resync session state — the whole layer
+  // needs to restart together for proper alignment.
   const allUnhealthyIps = [...new Set(Object.values(unhealthyByLayer).flat())];
   const details = affectedLayers
     .map(l => `${l.toUpperCase()}: [${unhealthyByLayer[l].join(', ')}]`)
@@ -105,8 +107,8 @@ export function detectUnhealthyNodesFromSnapshot(
   return {
     detected: true,
     condition: 'UnhealthyNodes',
-    details: `Individual unhealthy nodes — ${details}`,
-    restartScope: 'individual-node',
+    details: `Unhealthy nodes detected — ${details}`,
+    restartScope: 'full-layer',
     affectedLayers,
     affectedNodes: allUnhealthyIps,
   };
@@ -190,7 +192,9 @@ export async function detectUnhealthyNodes(config: Config): Promise<DetectionRes
     }
   }
 
-  // Individual unhealthy nodes
+  // Any unhealthy nodes in a layer → restart the whole layer.
+  // Partial restarts don't reliably resync session state — the whole layer
+  // needs to restart together for proper alignment.
   const allUnhealthyIps = [...new Set(Object.values(unhealthyByLayer).flat())];
   const details = affectedLayers
     .map(l => `${l.toUpperCase()}: [${unhealthyByLayer[l].join(', ')}]`)
@@ -199,8 +203,8 @@ export async function detectUnhealthyNodes(config: Config): Promise<DetectionRes
   return {
     detected: true,
     condition: 'UnhealthyNodes',
-    details: `Individual unhealthy nodes — ${details}`,
-    restartScope: 'individual-node',
+    details: `Unhealthy nodes detected — ${details}`,
+    restartScope: 'full-layer',
     affectedLayers,
     affectedNodes: allUnhealthyIps,
   };

@@ -148,8 +148,8 @@ async function restartIndividualNodes(
         continue;
       }
 
-      // Try explicit join using private IP for P2P
-      await joinCluster(nodeIp, refInfo.id, healthyNode.privateIp, layer, config);
+      // Try explicit join using private IP for P2P (fallback to public)
+      await joinCluster(nodeIp, refInfo.id, healthyNode.privateIp ?? healthyNode.ip, layer, config);
       await waitForReady(nodeIp, port, 90_000);
     }
   }
@@ -208,7 +208,7 @@ async function restartFullLayer(
       continue;
     }
 
-    await joinCluster(node.ip, firstInfo.id, first.privateIp, layer, config);
+    await joinCluster(node.ip, firstInfo.id, first.privateIp ?? first.ip, layer, config);
   }
 
   // Wait for all to be Ready
@@ -262,7 +262,7 @@ async function restartFullMetagraph(config: Config): Promise<void> {
         continue;
       }
 
-      await joinCluster(config.nodes[i].ip, ml0Info.id, config.nodes[0].privateIp, 'ml0', config);
+      await joinCluster(config.nodes[i].ip, ml0Info.id, config.nodes[0].privateIp ?? config.nodes[0].ip, 'ml0', config);
     }
 
     // Verify ML0 cluster

@@ -13,7 +13,7 @@ export interface NodeConfig {
   /** Public IP for health checks and SSH */
   ip: string;
   /** Private IP for P2P/cluster joins (defaults to public IP if not set) */
-  privateIp: string;
+  privateIp?: string;
 }
 
 export interface HypergraphConfig {

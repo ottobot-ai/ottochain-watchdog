@@ -71,11 +71,14 @@ async function waitForReady(
 
 /**
  * Join a node to the cluster via the CLI port.
+ *
+ * Uses the reference node's PRIVATE IP for P2P communication, since tessellation
+ * nodes advertise their private IPs in cluster info.
  */
 async function joinCluster(
   nodeIp: string,
   referenceId: string,
-  referenceIp: string,
+  referencePrivateIp: string,
   layer: Layer,
   config: Config,
 ): Promise<void> {
@@ -83,11 +86,11 @@ async function joinCluster(
   const p2pPort = config.p2pPorts[layer];
   const container = containerName(layer, config.nodes.findIndex(n => n.ip === nodeIp));
 
-  log(`[Restart] Joining ${nodeIp} ${layer} to cluster (reference=${referenceIp})`);
+  log(`[Restart] Joining ${nodeIp} ${layer} to cluster (reference=${referencePrivateIp})`);
   await sshExec(nodeIp, [
     `docker exec ${container} curl -sf -X POST http://127.0.0.1:${cliPort}/cluster/join`,
     `-H 'Content-Type: application/json'`,
-    `-d '{"id":"${referenceId}","ip":"${referenceIp}","p2pPort":${p2pPort}}'`,
+    `-d '{"id":"${referenceId}","ip":"${referencePrivateIp}","p2pPort":${p2pPort}}'`,
   ].join(' '), config);
 }
 
@@ -145,8 +148,8 @@ async function restartIndividualNodes(
         continue;
       }
 
-      // Try explicit join
-      await joinCluster(nodeIp, refInfo.id, healthyNode.ip, layer, config);
+      // Try explicit join using private IP for P2P
+      await joinCluster(nodeIp, refInfo.id, healthyNode.privateIp, layer, config);
       await waitForReady(nodeIp, port, 90_000);
     }
   }
@@ -205,7 +208,7 @@ async function restartFullLayer(
       continue;
     }
 
-    await joinCluster(node.ip, firstInfo.id, first.ip, layer, config);
+    await joinCluster(node.ip, firstInfo.id, first.privateIp, layer, config);
   }
 
   // Wait for all to be Ready
@@ -259,7 +262,7 @@ async function restartFullMetagraph(config: Config): Promise<void> {
         continue;
       }
 
-      await joinCluster(config.nodes[i].ip, ml0Info.id, config.nodes[0].ip, 'ml0', config);
+      await joinCluster(config.nodes[i].ip, ml0Info.id, config.nodes[0].privateIp, 'ml0', config);
     }
 
     // Verify ML0 cluster

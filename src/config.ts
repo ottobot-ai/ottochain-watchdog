@@ -10,7 +10,10 @@ import { DEFAULT_MANAGED_LAYERS } from './types.js';
 export interface NodeConfig {
   /** Human-friendly label */
   name: string;
+  /** Public IP for health checks and SSH */
   ip: string;
+  /** Private IP for P2P/cluster joins (defaults to public IP if not set) */
+  privateIp: string;
 }
 
 export interface HypergraphConfig {
@@ -124,6 +127,9 @@ function buildHypergraphConfig(): HypergraphConfig | undefined {
 export function loadConfig(): Config {
   const nodeIps = (process.env.NODE_IPS ?? '10.0.0.1,10.0.0.2,10.0.0.3').split(',');
   const nodeNames = (process.env.NODE_NAMES ?? 'node1,node2,node3').split(',');
+  // Private IPs for P2P communication (used in cluster join commands)
+  // Falls back to public IPs if not specified
+  const nodePrivateIps = (process.env.NODE_PRIVATE_IPS ?? '').split(',').filter(Boolean);
 
   const servicesIp = process.env.SERVICES_NODE_IP;
 
@@ -131,6 +137,7 @@ export function loadConfig(): Config {
     nodes: nodeIps.map((ip, i) => ({
       name: nodeNames[i] ?? `node${i + 1}`,
       ip: ip.trim(),
+      privateIp: nodePrivateIps[i]?.trim() || ip.trim(),
     })),
 
     servicesNode: servicesIp ? {

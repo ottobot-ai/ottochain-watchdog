@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1](https://github.com/ottobot-ai/ottochain-watchdog/compare/v1.3.0...v1.3.1) (2026-03-20)
+
+
+### Bug Fixes
+
+* always use full-layer restart for cluster issues ([#56](https://github.com/ottobot-ai/ottochain-watchdog/issues/56)) ([94e02c2](https://github.com/ottobot-ai/ottochain-watchdog/commit/94e02c251a208eb2a36ccbf200903fc35144a18c))
+
 ## [1.3.0](https://github.com/ottobot-ai/ottochain-watchdog/compare/v1.2.6...v1.3.0) (2026-03-18)
 
 

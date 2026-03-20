@@ -275,7 +275,7 @@ describe('detectForkedClusterFromSnapshot()', () => {
     ]);
 
     const result = detectForkedClusterFromSnapshot(config, snapshot);
-    expect(result.restartScope).toBe('individual-node');
+    expect(result.restartScope).toBe('full-layer');
   });
 
   it('recommends full-layer restart when majority forked', () => {
@@ -331,7 +331,7 @@ describe('detectForkedCluster() [legacy]', () => {
     expect(result.condition).toBe('ForkedCluster');
   });
 
-  it('checks layers in order: ml0, cl1, dl1', async () => {
+  it('checks layers in order: gl0, ml0, cl1, dl1', async () => {
     const config = makeConfig(3);
     const layersSeen: number[] = [];
     const mockFetch: ClusterFetchFn = async (_, port) => {
@@ -340,6 +340,12 @@ describe('detectForkedCluster() [legacy]', () => {
     };
 
     await detectForkedCluster(config, mockFetch);
-    expect(layersSeen).toEqual([9200, 9200, 9200, 9300, 9300, 9300, 9400, 9400, 9400]);
+    // 3 nodes × 4 layers = 12 calls (gl0=9000, ml0=9200, cl1=9300, dl1=9400)
+    expect(layersSeen).toEqual([
+      9000, 9000, 9000,  // gl0
+      9200, 9200, 9200,  // ml0
+      9300, 9300, 9300,  // cl1
+      9400, 9400, 9400,  // dl1
+    ]);
   });
 });

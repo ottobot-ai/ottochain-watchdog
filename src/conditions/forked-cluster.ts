@@ -112,17 +112,17 @@ export function detectForkedClusterFromSnapshot(
 ): DetectionResult {
   log('[ForkDetect] Checking cluster POVs across all nodes...');
 
-  for (const layer of ['ml0', 'cl1', 'dl1'] as Layer[]) {
+  for (const layer of ['gl0', 'ml0', 'cl1', 'dl1'] as Layer[]) {
     const result = checkLayerForkFromSnapshot(snapshot, layer);
 
     if (result.forked) {
-      const allForked = result.minorityNodes.length >= config.nodes.length - 1;
-
+      // Always do full-layer restart for forks — partial restarts don't reliably
+      // resync session state. The whole layer needs to restart together.
       return {
         detected: true,
         condition: 'ForkedCluster',
         details: `${layer.toUpperCase()} forked — minority nodes: ${result.minorityNodes.join(', ')}`,
-        restartScope: allForked ? 'full-layer' : 'individual-node',
+        restartScope: 'full-layer',
         affectedNodes: result.minorityNodes,
         affectedLayers: [layer],
       };
@@ -192,17 +192,17 @@ export async function detectForkedCluster(
 ): Promise<DetectionResult> {
   log('[ForkDetect] Checking cluster POVs across all nodes...');
 
-  for (const layer of ['ml0', 'cl1', 'dl1'] as Layer[]) {
+  for (const layer of ['gl0', 'ml0', 'cl1', 'dl1'] as Layer[]) {
     const result = await checkLayerFork(config, layer, fetchFn);
 
     if (result.forked) {
-      const allForked = result.minorityNodes.length >= config.nodes.length - 1;
-
+      // Always do full-layer restart for forks — partial restarts don't reliably
+      // resync session state. The whole layer needs to restart together.
       return {
         detected: true,
         condition: 'ForkedCluster',
         details: `${layer.toUpperCase()} forked — minority nodes: ${result.minorityNodes.join(', ')}`,
-        restartScope: allForked ? 'full-layer' : 'individual-node',
+        restartScope: 'full-layer',
         affectedNodes: result.minorityNodes,
         affectedLayers: [layer],
       };

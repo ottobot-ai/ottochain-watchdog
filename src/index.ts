@@ -111,13 +111,14 @@ async function runHealthCheck(
           continue;
         }
 
-        const restarted = await executeRestart(config, result);
+        const restartResult = await executeRestart(config, result);
+        const restarted = restartResult.success;
 
         // Publish restart event to Postgres
         await eventPublisher.publishRestart(result, result.restartScope, restarted);
 
         // Notify on restart result
-        await notificationService.notifyRestartComplete(result, result.restartScope, restarted);
+        await notificationService.notifyRestartComplete(result, result.restartScope, restarted, restartResult.error);
 
         // Check if we're now suspended
         if (isRestartSuspended()) {

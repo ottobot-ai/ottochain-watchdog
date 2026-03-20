@@ -169,12 +169,8 @@ async function restartFullLayer(
 
   const port = config.ports[layer];
 
-  // If ML0 is down, need full metagraph restart (L1s depend on ML0)
-  if (layer === 'ml0') {
-    log('[Restart] ML0 down → escalating to full metagraph restart');
-    await restartFullMetagraph(config);
-    return;
-  }
+  // Note: ML0 issues are escalated to full-metagraph at the top level of executeRestart().
+  // GL0 restarts independently — metagraph layers will reconnect to GL0 peer.
 
   // Kill all nodes for this layer
   await Promise.all(config.nodes.map((n, i) =>
@@ -297,14 +293,14 @@ async function restartFullMetagraph(config: Config): Promise<void> {
 export async function executeRestart(
   config: Config,
   result: DetectionResult,
-): Promise<boolean> {
-  if (!result.detected || result.restartScope === 'none') return false;
+): Promise<{ success: boolean; error?: string }> {
+  if (!result.detected || result.restartScope === 'none') return { success: false };
 
   // If we've given up after max consecutive failures, don't try again
   // until the condition clears (nodes recover on their own or manual intervention)
   if (givenUp) {
     log(`[Restart] Restart suspended after ${config.maxConsecutiveFailures} consecutive failures. Manual intervention required.`);
-    return false;
+    return { success: false };
   }
 
   // Rate limit
@@ -312,7 +308,7 @@ export async function executeRestart(
   if (recentCount >= config.maxRestartsPerHour) {
     const msg = `Restart loop detected (${recentCount} restarts in 1h). Manual intervention required.`;
     log(`[Restart] ${msg}`);
-    return false;
+    return { success: false };
   }
 
   // Cooldown check
@@ -321,7 +317,7 @@ export async function executeRestart(
     const sinceLastMs = Date.now() - new Date(lastRestart.timestamp).getTime();
     if (sinceLastMs < config.restartCooldownMinutes * 60_000) {
       log(`[Restart] Cooldown active (${(sinceLastMs / 60_000).toFixed(1)}m since last restart)`);
-      return false;
+      return { success: false };
     }
   }
 
@@ -329,27 +325,46 @@ export async function executeRestart(
   const managedAffected = (result.affectedLayers ?? []).filter(l => isManaged(l, config));
   if (managedAffected.length === 0 && result.restartScope !== 'full-metagraph') {
     log(`[Restart] No managed layers affected (affected: ${result.affectedLayers?.join(', ')}, managed: ${config.managedLayers.join(', ')})`);
-    return false;
+    return { success: false };
   }
 
-  log(`[Restart] Initiating ${result.restartScope} restart for ${result.condition}: ${result.details}`);
+  // Dependency-aware layer restart logic:
+  // - GL0 is independent (can restart alone)
+  // - ML0 requires full metagraph restart (ML0 + CL1 + DL1)
+  // - CL1/DL1 can restart independently (ML0 stays up)
+  const hasML0 = managedAffected.includes('ml0');
+  const effectiveScope = hasML0 ? 'full-metagraph' : result.restartScope;
+  const effectiveLayers = hasML0
+    ? config.managedLayers.filter(l => l !== 'gl0')  // ML0 + L1 layers
+    : managedAffected;
+
+  if (hasML0 && result.restartScope !== 'full-metagraph') {
+    log(`[Restart] ML0 affected → escalating to full-metagraph restart`);
+  }
+
+  log(`[Restart] Initiating ${effectiveScope} restart for ${result.condition}: ${result.details}`);
 
   const event: RestartEvent = {
     timestamp: new Date().toISOString(),
-    scope: result.restartScope,
+    scope: effectiveScope,
     condition: result.condition,
-    layers: managedAffected,
+    layers: effectiveLayers,
     nodes: result.affectedNodes ?? [],
     success: false,
   };
 
   try {
-    switch (result.restartScope) {
+    switch (effectiveScope) {
       case 'individual-node':
         await restartIndividualNodes(config, { ...result, affectedLayers: managedAffected });
         break;
       case 'full-layer':
-        for (const layer of managedAffected) {
+        // Restart layers in dependency order: GL0 first (if affected), then CL1/DL1
+        // (ML0 escalates to full-metagraph above, so won't be here)
+        if (effectiveLayers.includes('gl0')) {
+          await restartFullLayer(config, 'gl0');
+        }
+        for (const layer of effectiveLayers.filter(l => l !== 'gl0')) {
           await restartFullLayer(config, layer);
         }
         break;
@@ -374,7 +389,7 @@ export async function executeRestart(
   }
 
   restartHistory.push(event);
-  return event.success;
+  return { success: event.success, error: event.error };
 }
 
 /**

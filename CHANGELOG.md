@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0](https://github.com/ottobot-ai/ottochain-watchdog/compare/v1.3.1...v1.4.0) (2026-03-20)
+
+
+### Features
+
+* use private IPs for P2P cluster joins ([#58](https://github.com/ottobot-ai/ottochain-watchdog/issues/58)) ([e30fba4](https://github.com/ottobot-ai/ottochain-watchdog/commit/e30fba48281214410b72f82b355b538182c9c91b))
+
 ## [1.3.1](https://github.com/ottobot-ai/ottochain-watchdog/compare/v1.3.0...v1.3.1) (2026-03-20)
 
 

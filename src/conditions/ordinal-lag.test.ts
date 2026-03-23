@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { detectOrdinalLagFromSnapshot } from './ordinal-lag.js';
-import type { Config, HealthSnapshot, NodeHealthData } from '../types.js';
+import { detectOrdinalLagFromSnapshot, resetLagTracker } from './ordinal-lag.js';
+import type { Config } from '../config.js';
+import type { HealthSnapshot, NodeHealthData } from '../types.js';
 
 function makeConfig(overrides: Partial<Config> = {}): Config {
   return {
@@ -42,6 +43,10 @@ function makeSnapshot(nodes: NodeHealthData[]): HealthSnapshot {
 
 describe('detectOrdinalLagFromSnapshot', () => {
   const config = makeConfig();
+
+  beforeEach(() => {
+    resetLagTracker();
+  });
 
   it('returns not detected when all nodes are in sync', () => {
     const snapshot = makeSnapshot([
@@ -139,21 +144,68 @@ describe('detectOrdinalLagFromSnapshot', () => {
     expect(result.condition).toBe('OrdinalLag');
   });
 
-  it('uses individual-node restart scope', () => {
-    // We need to simulate time passing — use the config override
+  it('tries individual restart when single node lagging with majority aligned', () => {
     const fastConfig = makeConfig({ ordinalLagDurationSecs: 0 } as any);
     const snapshot = makeSnapshot([
       makeNode('10.0.0.1', [{ layer: 'gl0', ordinal: 100 }]),
       makeNode('10.0.0.2', [{ layer: 'gl0', ordinal: 1000 }]),
       makeNode('10.0.0.3', [{ layer: 'gl0', ordinal: 1000 }]),
     ]);
-    // First call starts tracking
+    // First call: starts tracking
     detectOrdinalLagFromSnapshot(fastConfig, snapshot);
-    // Second call with 0 duration threshold triggers immediately
+    // Second call: triggers — majority healthy, first attempt → individual
     const result = detectOrdinalLagFromSnapshot(fastConfig, snapshot);
     expect(result.detected).toBe(true);
     expect(result.restartScope).toBe('individual-node');
     expect(result.affectedNodes).toContain('10.0.0.1');
-    expect(result.affectedLayers).toContain('gl0');
+  });
+
+  it('escalates to full-layer if individual restart did not fix it', () => {
+    const fastConfig = makeConfig({ ordinalLagDurationSecs: 0 } as any);
+    const snapshot = makeSnapshot([
+      makeNode('10.0.0.1', [{ layer: 'gl0', ordinal: 100 }]),
+      makeNode('10.0.0.2', [{ layer: 'gl0', ordinal: 1000 }]),
+      makeNode('10.0.0.3', [{ layer: 'gl0', ordinal: 1000 }]),
+    ]);
+    // First cycle: track
+    detectOrdinalLagFromSnapshot(fastConfig, snapshot);
+    // Second cycle: individual restart attempted
+    const r1 = detectOrdinalLagFromSnapshot(fastConfig, snapshot);
+    expect(r1.restartScope).toBe('individual-node');
+
+    // Third cycle: still lagging → escalate to full-layer
+    const r2 = detectOrdinalLagFromSnapshot(fastConfig, snapshot);
+    expect(r2.detected).toBe(true);
+    expect(r2.restartScope).toBe('full-layer');
+  });
+
+  it('uses full-layer immediately when majority is lagging', () => {
+    const fastConfig = makeConfig({ ordinalLagDurationSecs: 0 } as any);
+    const snapshot = makeSnapshot([
+      makeNode('10.0.0.1', [{ layer: 'ml0', ordinal: 100 }]),
+      makeNode('10.0.0.2', [{ layer: 'ml0', ordinal: 100 }]),
+      makeNode('10.0.0.3', [{ layer: 'ml0', ordinal: 1000 }]),
+    ]);
+    // First call: track
+    detectOrdinalLagFromSnapshot(fastConfig, snapshot);
+    // Second call: 2/3 lagging = no majority → full-layer
+    const result = detectOrdinalLagFromSnapshot(fastConfig, snapshot);
+    expect(result.detected).toBe(true);
+    expect(result.restartScope).toBe('full-layer');
+  });
+
+  it('works the same for DL1 — individual first, then escalate', () => {
+    const fastConfig = makeConfig({ ordinalLagDurationSecs: 0 } as any);
+    const snapshot = makeSnapshot([
+      makeNode('10.0.0.1', [{ layer: 'dl1', ordinal: 100 }]),
+      makeNode('10.0.0.2', [{ layer: 'dl1', ordinal: 1000 }]),
+      makeNode('10.0.0.3', [{ layer: 'dl1', ordinal: 1000 }]),
+    ]);
+    detectOrdinalLagFromSnapshot(fastConfig, snapshot);
+    const r1 = detectOrdinalLagFromSnapshot(fastConfig, snapshot);
+    expect(r1.restartScope).toBe('individual-node');
+    // Still lagging → escalate
+    const r2 = detectOrdinalLagFromSnapshot(fastConfig, snapshot);
+    expect(r2.restartScope).toBe('full-layer');
   });
 });

@@ -30,9 +30,15 @@ interface LagState {
   firstSeen: number;
   ordinal: number;
   peerMax: number;
+  individualRestartAttempted: boolean;
 }
 
 const lagTracker = new Map<string, LagState>();
+
+/** Reset all tracking state (for testing) */
+export function resetLagTracker(): void {
+  lagTracker.clear();
+}
 
 function lagKey(nodeIp: string, layer: string): string {
   return `${nodeIp}:${layer}`;
@@ -77,7 +83,7 @@ export function detectOrdinalLagFromSnapshot(
         // Node is lagging — track it
         const existing = lagTracker.get(key);
         if (!existing) {
-          lagTracker.set(key, { firstSeen: now, ordinal: node.ordinal, peerMax: maxOrdinal });
+          lagTracker.set(key, { firstSeen: now, ordinal: node.ordinal, peerMax: maxOrdinal, individualRestartAttempted: false });
           log(`[OrdinalLag] ${layer.toUpperCase()} ${node.ip}: ordinal ${node.ordinal} is ${lag} behind peers (max: ${maxOrdinal}) — tracking`);
         } else {
           const lagSecs = (now - existing.firstSeen) / 1000;
@@ -102,22 +108,89 @@ export function detectOrdinalLagFromSnapshot(
     return { detected: false, condition: 'OrdinalLag', details: '', restartScope: 'none' };
   }
 
-  // Restart the individual lagging nodes
   const details = laggingNodes
     .map(n => `${n.layer.toUpperCase()} ${n.ip}: ordinal ${n.ordinal} (peers at ${n.peerMax}, lagging ${n.lagSecs.toFixed(0)}s)`)
     .join('; ');
 
-  // Clear tracker for nodes we're restarting
-  for (const n of laggingNodes) {
-    lagTracker.delete(lagKey(n.ip, n.layer));
+  const affectedLayers = [...new Set(laggingNodes.map(n => n.layer))];
+  const affectedNodes = [...new Set(laggingNodes.map(n => n.ip))];
+
+  // Determine restart scope with progressive escalation:
+  //
+  // For each affected layer, check:
+  //   1. How many nodes are lagging vs total reachable?
+  //   2. Has an individual restart already been attempted?
+  //
+  // Strategy:
+  //   - Single node lagging + majority aligned → try individual restart first
+  //   - Individual restart already tried (still lagging) → escalate to full-layer
+  //   - Multiple nodes lagging (no clear majority) → full-layer immediately
+  //
+  // This applies to ALL layers including GL0/ML0. We proved individual
+  // restart works when the majority is healthy — but if it doesn't fix
+  // the problem, we escalate immediately on the next detection cycle.
+
+  let restartScope: 'individual-node' | 'full-layer' = 'individual-node';
+
+  for (const layer of affectedLayers) {
+    // Count reachable Ready nodes on this layer
+    let totalReady = 0;
+    for (const node of snapshot.nodes) {
+      const lh = node.layers.find(l => l.layer === layer);
+      if (lh && lh.reachable && lh.state === 'Ready') totalReady++;
+    }
+
+    const laggingOnLayer = laggingNodes.filter(n => n.layer === layer);
+    const laggingCount = laggingOnLayer.length;
+    const majorityHealthy = laggingCount < totalReady / 2;
+
+    if (!majorityHealthy) {
+      // No clear majority — cluster is broken, full-layer restart
+      log(`[OrdinalLag] ${layer.toUpperCase()}: ${laggingCount}/${totalReady} nodes lagging — no majority, full-layer restart`);
+      restartScope = 'full-layer';
+      break;
+    }
+
+    // Check if we already tried individual restart for any of these nodes
+    const anyPreviouslyAttempted = laggingOnLayer.some(n => {
+      const state = lagTracker.get(lagKey(n.ip, n.layer));
+      return state?.individualRestartAttempted === true;
+    });
+
+    if (anyPreviouslyAttempted) {
+      // Individual restart didn't fix it — escalate
+      log(`[OrdinalLag] ${layer.toUpperCase()}: individual restart already attempted — escalating to full-layer`);
+      restartScope = 'full-layer';
+      break;
+    }
+
+    // Majority healthy + first attempt → try individual restart
+    log(`[OrdinalLag] ${layer.toUpperCase()}: ${laggingCount}/${totalReady} lagging, majority aligned — trying individual restart`);
+  }
+
+  // Mark nodes as having had individual restart attempted (for escalation next cycle)
+  // Clear tracker for full-layer (fresh start after layer restart)
+  if (restartScope === 'individual-node') {
+    for (const n of laggingNodes) {
+      const key = lagKey(n.ip, n.layer);
+      const state = lagTracker.get(key);
+      if (state) {
+        state.individualRestartAttempted = true;
+      }
+    }
+  } else {
+    // Full-layer restart — clear all tracking for affected layers
+    for (const n of laggingNodes) {
+      lagTracker.delete(lagKey(n.ip, n.layer));
+    }
   }
 
   return {
     detected: true,
     condition: 'OrdinalLag',
-    details,
-    restartScope: 'individual-node',
-    affectedNodes: [...new Set(laggingNodes.map(n => n.ip))],
-    affectedLayers: [...new Set(laggingNodes.map(n => n.layer))],
+    details: `${details} [scope: ${restartScope}]`,
+    restartScope,
+    affectedNodes,
+    affectedLayers,
   };
 }

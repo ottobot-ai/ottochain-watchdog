@@ -53,8 +53,8 @@ export function detectOrdinalLagFromSnapshot(
 ): DetectionResult {
   log('[OrdinalLag] Checking per-node ordinal sync across layers...');
 
-  const lagThreshold = (config as any).ordinalLagThreshold ?? DEFAULT_LAG_THRESHOLD;
-  const lagDurationSecs = (config as any).ordinalLagDurationSecs ?? DEFAULT_LAG_DURATION_SECS;
+  const lagThreshold = config.ordinalLagThreshold ?? DEFAULT_LAG_THRESHOLD;
+  const lagDurationSecs = config.ordinalLagDurationSecs ?? DEFAULT_LAG_DURATION_SECS;
   const now = Date.now();
 
   const laggingNodes: { ip: string; layer: Layer; ordinal: number; peerMax: number; lagSecs: number }[] = [];

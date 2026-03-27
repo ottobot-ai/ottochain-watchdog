@@ -24,6 +24,7 @@ import { detectUnhealthyNodesFromSnapshot } from './conditions/unhealthy-nodes.j
 import { detectServicesHealth } from './conditions/services-health.js';
 import { detectNodeResourceIssues } from './conditions/node-resources.js';
 import { detectHypergraphHealth } from './conditions/hypergraph-health.js';
+import { detectOrdinalLagFromSnapshot } from './conditions/ordinal-lag.js';
 import { executeRestart, isRestartSuspended, resetRestartState, getRestartState } from './restart/orchestrator.js';
 import { EventPublisher } from './services/events.js';
 import { NotificationService } from './notifications.js';
@@ -60,6 +61,7 @@ async function runHealthCheck(
     { name: 'ForkedCluster', detect: () => detectForkedClusterFromSnapshot(config, snapshot) },
     { name: 'SnapshotsStopped', detect: () => detectSnapshotsStoppedFromSnapshot(config, snapshot, stallTracker) },
     { name: 'UnhealthyNodes', detect: () => detectUnhealthyNodesFromSnapshot(config, snapshot) },
+    { name: 'OrdinalLag', detect: () => detectOrdinalLagFromSnapshot(config, snapshot) },
   ];
 
   // Services node monitoring (if configured)

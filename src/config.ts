@@ -103,6 +103,12 @@ export interface Config {
 
   /** Optional HTTP API */
   api?: ApiConfig;
+
+  /** OrdinalLag condition config (optional — condition uses defaults if absent) */
+  /** Number of peers that must be ahead before a node is considered lagging */
+  ordinalLagThreshold?: number;
+  /** Seconds a node must be continuously lagging before triggering a restart */
+  ordinalLagDurationSecs?: number;
 }
 
 function buildHypergraphConfig(): HypergraphConfig | undefined {

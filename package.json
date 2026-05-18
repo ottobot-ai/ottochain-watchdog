@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "ioredis": "^5.10.1",
-    "pg": "^8.20.0",
+    "pg": "^8.21.0",
     "ssh2": "^1.16.0"
   },
   "devDependencies": {
